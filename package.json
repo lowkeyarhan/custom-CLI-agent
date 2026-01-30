@@ -10,17 +10,31 @@
     "build": "tsc",
     "dev": "tsc && node dist/index.js",
     "start": "node dist/index.js",
-    "watch": "tsc --watch"
+    "watch": "tsc --watch",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "ai",
     "cli",
     "coding-agent",
     "openrouter",
-    "autonomous"
+    "autonomous",
+    "react-agent",
+    "llm",
+    "assistant",
+    "code-generation",
+    "automation"
   ],
-  "author": "",
+  "author": "Your Name <your.email@example.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/arhan.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/arhan/issues"
+  },
+  "homepage": "https://github.com/yourusername/arhan#readme",
   "dependencies": {
     "chalk": "^5.3.0",
     "commander": "^11.1.0",
