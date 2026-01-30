@@ -14,6 +14,7 @@
 ## Installation
 
 ### Prerequisites
+
 - Node.js >= 18.0.0
 - An OpenRouter API key ([get one here](https://openrouter.ai/keys))
 
@@ -36,11 +37,13 @@ Now you can use `arhan` from anywhere!
 ### Environment Setup
 
 1. Copy the example environment file:
+
 ```bash
 cp .env.example .env
 ```
 
 2. Edit `.env` and add your OpenRouter API key:
+
 ```bash
 OPENROUTER_API_KEY=your_api_key_here
 ```
@@ -119,10 +122,12 @@ Arhan uses a ReAct (Reasoning + Acting) loop:
 ## Models
 
 ### Free Models (Recommended for testing)
+
 - `google/gemini-flash-1.5` (Default)
 - `meta-llama/llama-3.1-8b-instruct:free`
 
 ### Paid Models (Higher quality)
+
 - `anthropic/claude-3.5-sonnet`
 - `openai/gpt-4-turbo`
 - `google/gemini-pro-1.5`
@@ -142,11 +147,13 @@ npm run dev -- "your task here"
 ## Conversation History
 
 Arhan maintains conversation history in `.arhan_history.json` by default. This allows the AI to:
+
 - Remember previous interactions
 - Understand project context over time
 - Make better decisions based on past actions
 
 To clear history:
+
 ```bash
 arhan --clear
 ```
@@ -154,14 +161,17 @@ arhan --clear
 ## Troubleshooting
 
 ### "OPENROUTER_API_KEY environment variable is required"
+
 - Make sure you have a `.env` file with your API key
 - Or export it: `export OPENROUTER_API_KEY=your_key_here`
 
 ### "Command not found: arhan"
+
 - Run `npm link` in the project directory
 - Or use `npm run dev` to test without linking
 
 ### Agent is making too many iterations
+
 - Use `--max-iterations` to limit
 - Be more specific in your task description
 - Clear history if context is confusing the agent
