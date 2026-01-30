@@ -5,8 +5,10 @@ import chalk from "chalk";
 import dotenv from "dotenv";
 import path from "path";
 import os from "os";
+import readline from "readline";
 import { Agent } from "./agent.js";
 import type { AgentConfig } from "./types.js";
+import { UI } from "./ui.js";
 
 // Load environment variables
 // 1. Load from home directory (global config)
@@ -27,7 +29,7 @@ program
   .option(
     "-m, --model <model>",
     "OpenRouter model to use",
-    process.env.OPENROUTER_MODEL || "google/gemini-flash-1.5",
+    process.env.OPENROUTER_MODEL || "google/gemini-2.0-flash-exp:free",
   )
   .option("--max-iterations <number>", "Maximum iterations", "20")
   .option("--clear", "Clear conversation history", false)
@@ -72,35 +74,49 @@ program
       }
 
       // Show welcome message
-      console.log(chalk.bold.cyan("\n🤖 Arhan - AI Coding Agent"));
-      console.log(chalk.dim(`Model: ${config.model}`));
-      console.log(chalk.dim(`History: ${config.conversationFile}`));
+      UI.welcome();
+      const modelName = config.model.split("/").pop() || config.model;
+      UI.info(`Model: ${modelName}`);
+      UI.info(`Auto-approve: ${config.autoApprove ? "enabled" : "disabled"}`);
       console.log();
 
-      // If no task provided, show usage
+      // If no task provided, show interactive prompt
       if (!task) {
-        console.log(chalk.yellow("No task provided. Usage:"));
-        console.log(chalk.dim('  arhan "your task here"'));
-        console.log(chalk.dim('  arhan "fix the bug in index.js"'));
-        console.log(chalk.dim('  arhan "add error handling to the API"'));
-        console.log();
-        return;
+        // Create interactive input area
+        const rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+
+        return new Promise<void>((resolve) => {
+          rl.question(UI.prompt(), async (userTask: string) => {
+            rl.close();
+
+            if (!userTask.trim()) {
+              console.log();
+              console.log(chalk.hex("#808080")("  No task entered. Exiting."));
+              console.log();
+              resolve();
+              return;
+            }
+
+            // Run the agent with the user's task
+            UI.taskStart(userTask.trim());
+            await agent.run(userTask.trim());
+            UI.complete();
+            resolve();
+          });
+        });
       }
 
       // Run the agent
-      console.log(chalk.bold("Task:"), task);
-      console.log();
+      UI.taskStart(task);
 
       await agent.run(task);
 
-      console.log();
-      console.log(chalk.green("✅ Task completed"));
-      console.log(chalk.dim("\nHistory saved to:"), config.conversationFile);
+      UI.complete();
     } catch (error) {
-      console.error(
-        chalk.red("\n❌ Fatal error:"),
-        error instanceof Error ? error.message : String(error),
-      );
+      UI.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
   });

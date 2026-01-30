@@ -1,38 +1,37 @@
 import OpenAI from "openai";
-import chalk from "chalk";
-import ora, { Ora } from "ora";
 import inquirer from "inquirer";
 import type { AgentConfig, Message, ToolCall } from "./types.js";
 import { tools, executeTool } from "./tools.js";
 import { HistoryManager } from "./history.js";
+import { UI } from "./ui.js";
 
-const SYSTEM_PROMPT = `You are Arhan, an autonomous AI coding agent running in a terminal.
+const SYSTEM_PROMPT = `You are lowkeyarhan, an autonomous AI coding agent running in a terminal.
 
-You have access to these tools:
+You have access to these tools that you MUST use to complete tasks:
 - read_file: Read file contents
 - write_file: Create or modify files
 - list_files: List directory contents
 - run_command: Execute shell commands
 
-Your goal is to help the user with coding tasks by:
-1. Understanding their request
-2. Reading relevant files to understand the context
-3. Making necessary changes or running commands
-4. Verifying your work
+CRITICAL RULES:
+1. When you need information, CALL the appropriate tool - don't just say you will
+2. Explain your reasoning briefly, then immediately use the tool
+3. After tool results, analyze them and decide on next steps
+4. Continue using tools until the task is fully complete
+5. Only respond with final text when no more actions are needed
 
-IMPORTANT:
-- Always explain your reasoning before taking action
-- Be thorough but concise
-- Use tools step-by-step, don't try to do everything at once
-- After making changes, verify they work
-- If you're unsure, ask the user for clarification
+WORKFLOW:
+1. Understand the user's request
+2. USE tools to gather information or make changes
+3. Analyze tool results
+4. USE more tools if needed
+5. Summarize what you accomplished
 
-Remember: You're an autonomous agent, so be proactive but thoughtful.`;
+Remember: You must actually CALL the tools using function calls, not just describe what you would do.`;
 
 export class Agent {
   private client: OpenAI;
   private config: AgentConfig;
-  private spinner: Ora;
   private history: HistoryManager;
 
   constructor(config: AgentConfig) {
@@ -48,11 +47,10 @@ export class Agent {
       apiKey,
       defaultHeaders: {
         "HTTP-Referer": process.env.APP_URL || "http://localhost",
-        "X-Title": process.env.APP_NAME || "Arhan CLI",
+        "X-Title": process.env.APP_NAME || "lowkeyarhan",
       },
     });
 
-    this.spinner = ora();
     this.history = new HistoryManager(config.conversationFile);
   }
 
@@ -85,10 +83,7 @@ export class Agent {
       try {
         shouldContinue = await this.executeIteration();
       } catch (error) {
-        console.error(
-          chalk.red("\n❌ Error:"),
-          error instanceof Error ? error.message : String(error),
-        );
+        UI.error(error instanceof Error ? error.message : String(error));
         shouldContinue = false;
       }
 
@@ -97,12 +92,12 @@ export class Agent {
     }
 
     if (iterations >= this.config.maxIterations) {
-      console.log(chalk.yellow("\n⚠️  Reached maximum iterations limit"));
+      UI.maxIterations();
     }
   }
 
   private async executeIteration(): Promise<boolean> {
-    this.spinner.start(chalk.blue("🤖 Arhan is thinking..."));
+    UI.thinking();
 
     const messages = this.history.getMessages();
 
@@ -118,15 +113,24 @@ export class Agent {
 
       let assistantMessage = "";
       let toolCalls: ToolCall[] = [];
-
-      this.spinner.stop();
+      let hasStartedContent = false;
 
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
 
         if (delta?.content) {
-          process.stdout.write(chalk.cyan(delta.content));
+          // Add indentation only at the very start of content
+          if (!hasStartedContent && delta.content.trim()) {
+            process.stdout.write("  ");
+            hasStartedContent = true;
+          }
+          UI.streamContent(delta.content);
           assistantMessage += delta.content;
+
+          // If content ends with newline, add indentation for next line
+          if (delta.content.endsWith("\n")) {
+            process.stdout.write("  ");
+          }
         }
 
         if (delta?.tool_calls) {
@@ -158,7 +162,7 @@ export class Agent {
       }
 
       if (assistantMessage) {
-        console.log(); // New line after streaming
+        console.log(); // New line after streaming completes
       }
 
       // Save assistant message
@@ -181,10 +185,33 @@ export class Agent {
         return true; // Continue loop
       }
 
-      // No tool calls, conversation is complete
+      // Check if the agent is describing tool usage without actually calling them
+      const lowerContent = assistantMessage.toLowerCase();
+      const mentionsTools =
+        lowerContent.includes("list_files") ||
+        lowerContent.includes("read_file") ||
+        lowerContent.includes("write_file") ||
+        lowerContent.includes("run_command") ||
+        lowerContent.includes("will use") ||
+        lowerContent.includes("i would like to") ||
+        lowerContent.includes("my first step");
+
+      if (mentionsTools && toolCalls.length === 0) {
+        // Prompt the agent to actually use the tools
+        UI.warning(
+          "Agent mentioned using tools but did not call them. Prompting to take action...",
+        );
+        this.history.addMessage({
+          role: "user",
+          content:
+            "Please proceed and actually call the tool now. Do not just describe what you will do - execute the tool call.",
+        });
+        return true; // Continue loop
+      }
+
+      // No tool calls and not talking about tools, conversation is complete
       return false;
     } catch (error) {
-      this.spinner.stop();
       throw error;
     }
   }
@@ -196,14 +223,12 @@ export class Agent {
     try {
       args = JSON.parse(argsStr);
     } catch (error) {
-      console.error(
-        chalk.red(`\n❌ Failed to parse tool arguments: ${argsStr}`),
-      );
+      UI.error(`Failed to parse tool arguments: ${argsStr}`);
       return;
     }
 
-    console.log(chalk.blue(`\n🔧 Tool: ${name}`));
-    console.log(chalk.dim(JSON.stringify(args, null, 2)));
+    // Show tool call
+    UI.toolCallStart(name, args);
 
     // Check if we need user confirmation
     const needsConfirmation = await this.needsConfirmation(name, args);
@@ -213,13 +238,13 @@ export class Agent {
         {
           type: "confirm",
           name: "confirm",
-          message: chalk.yellow(`Allow ${name}?`),
+          message: UI.confirmation(name, args),
           default: name === "read_file" || name === "list_files",
         },
       ]);
 
       if (!confirm) {
-        console.log(chalk.yellow("❌ Tool execution cancelled by user"));
+        UI.cancelled();
         this.history.addMessage({
           role: "tool",
           tool_call_id: toolCall.id,
@@ -230,19 +255,10 @@ export class Agent {
     }
 
     // Execute tool
-    this.spinner.start(chalk.dim("Executing..."));
     const result = await executeTool(name, args);
-    this.spinner.stop();
 
-    if (result.success) {
-      console.log(chalk.green("✅ Success"));
-      if (result.output) {
-        console.log(chalk.dim(this.truncateOutput(result.output)));
-      }
-    } else {
-      console.log(chalk.red("❌ Error"));
-      console.log(chalk.red(result.error || "Unknown error"));
-    }
+    // Show result
+    UI.toolCallResult(result.success, result.output, result.error);
 
     // Add tool result to history
     this.history.addMessage({
@@ -279,15 +295,8 @@ export class Agent {
     return false;
   }
 
-  private truncateOutput(output: string, maxLength: number = 500): string {
-    if (output.length <= maxLength) {
-      return output;
-    }
-    return output.substring(0, maxLength) + "\n... (output truncated)";
-  }
-
   async clearHistory(): Promise<void> {
     await this.history.clearFile();
-    console.log(chalk.green("✅ Conversation history cleared"));
+    UI.info("✓ Conversation history cleared");
   }
 }
