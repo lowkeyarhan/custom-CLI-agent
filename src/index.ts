@@ -10,19 +10,14 @@ import { Agent } from "./agent.js";
 import type { AgentConfig } from "./types.js";
 import { UI } from "./ui.js";
 
-// Load environment variables
-// 1. Load from home directory (global config)
 dotenv.config({ path: path.join(os.homedir(), ".lowkeyarhan", ".env") });
-// 2. Load from current directory (local config) - overrides global
 dotenv.config({ override: true });
 
 const program = new Command();
-
 program
   .name("lowkeyarhan")
   .description("lowkeyarhan - AI Coding Agent CLI")
   .version("1.0.0");
-
 program
   .argument("[task]", "The coding task to perform")
   .option("-y, --yes", "Auto-approve all tool executions", false)
@@ -40,11 +35,10 @@ program
   )
   .action(async (task: string | undefined, options) => {
     try {
-      // Check for API key
       if (!process.env.OPENROUTER_API_KEY) {
         console.error(
           chalk.red(
-            "❌ Error: OPENROUTER_API_KEY environment variable is required",
+            "\u2718 Error: OPENROUTER_API_KEY environment variable is required",
           ),
         );
         console.log(
@@ -54,44 +48,33 @@ program
         console.log(chalk.dim("  export OPENROUTER_API_KEY=your_key_here"));
         process.exit(1);
       }
-
       const config: AgentConfig = {
         model: options.model,
         autoApprove: options.yes,
         maxIterations: parseInt(options.maxIterations, 10),
         conversationFile: path.resolve(process.cwd(), options.history),
       };
-
       const agent = new Agent(config);
       await agent.initialize();
-
-      // Clear history if requested
       if (options.clear) {
         await agent.clearHistory();
         if (!task) {
           return;
         }
       }
-
-      // Show welcome message
       UI.welcome();
       const modelName = config.model.split("/").pop() || config.model;
       UI.info(`Model: ${modelName}`);
       UI.info(`Auto-approve: ${config.autoApprove ? "enabled" : "disabled"}`);
       console.log();
-
-      // If no task provided, show interactive prompt
       if (!task) {
-        // Create interactive input area
         const rl = readline.createInterface({
           input: process.stdin,
           output: process.stdout,
         });
-
         return new Promise<void>((resolve) => {
           rl.question(UI.prompt(), async (userTask: string) => {
             rl.close();
-
             if (!userTask.trim()) {
               console.log();
               console.log(chalk.hex("#808080")("  No task entered. Exiting."));
@@ -99,8 +82,6 @@ program
               resolve();
               return;
             }
-
-            // Run the agent with the user's task
             UI.taskStart(userTask.trim());
             await agent.run(userTask.trim());
             UI.complete();
@@ -108,17 +89,12 @@ program
           });
         });
       }
-
-      // Run the agent
       UI.taskStart(task);
-
       await agent.run(task);
-
       UI.complete();
     } catch (error) {
       UI.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
   });
-
 program.parse();
