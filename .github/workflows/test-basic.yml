@@ -1,0 +1,40 @@
+name: Test Basic Setup
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test-basic:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Check files
+        run: |
+          echo "Checking project structure..."
+          ls -la
+          echo "---"
+          echo "Checking if package.json exists..."
+          cat package.json | head -20
+          echo "---"
+          echo "Checking if package-lock.json exists..."
+          ls -la package-lock.json || echo "package-lock.json not found!"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+      - name: Test CLI
+        run: node dist/index.js --help

@@ -4,7 +4,7 @@
   "description": "AI Coding Agent CLI with Claude Code inspired UI - Your autonomous coding assistant in the terminal",
   "main": "dist/index.js",
   "bin": {
-    "lowkeyarhan": "./dist/index.js"
+    "lowkeyarhan": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -13,7 +13,10 @@
     "test": "npm run build && node dist/index.js \"Create a file named test.txt with 'Hello from lowkeyarhan'\"",
     "test:simple": "npm run build && node dist/index.js \"List files in current directory\"",
     "watch": "tsc --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "release:patch": "npm version patch && git push --follow-tags",
+    "release:minor": "npm version minor && git push --follow-tags",
+    "release:major": "npm version major && git push --follow-tags"
   },
   "keywords": [
     "ai",
@@ -27,16 +30,16 @@
     "code-generation",
     "automation"
   ],
-  "author": "Your Name <your.email@example.com>",
+  "author": "Arhan Dash <anup.arhan.das@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/arhan.git"
+    "url": "https://github.com/lowkeyarhan/custom-CLI-agent"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/arhan/issues"
+    "url": "https://github.com/lowkeyarhan/custom-CLI-agent/issues"
   },
-  "homepage": "https://github.com/yourusername/arhan#readme",
+  "homepage": "https://github.com/lowkeyarhan/custom-CLI-agent#readme",
   "dependencies": {
     "boxen": "^8.0.1",
     "chalk": "^5.3.0",

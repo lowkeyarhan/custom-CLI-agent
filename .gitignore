@@ -3,4 +3,10 @@ dist/
 *.log
 .env
 .arhan_history.json
+*.lowkeyarhan_history.json
 *.tgz
+
+# Test files
+hello.txt
+test.txt
+demo.txt
