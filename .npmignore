@@ -29,6 +29,9 @@ QUICK_REFERENCE.md
 .git/
 .gitignore
 
+# Emergent platform specific
+.emergent/
+
 # Project specific (not part of CLI tool)
 backend/
 frontend/
