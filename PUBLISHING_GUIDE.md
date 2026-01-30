@@ -1,7 +1,9 @@
 # Publishing Arhan to npm Registry
 
 ## Overview
+
 Once published to npm, anyone can install your CLI tool globally:
+
 ```bash
 npm install -g arhan
 # Then use it anywhere:
@@ -11,11 +13,13 @@ arhan "your task"
 ## Method 1: Publish to Public npm Registry (Recommended)
 
 ### Step 1: Create npm Account
+
 1. Go to https://www.npmjs.com/signup
 2. Create a free account
 3. Verify your email
 
 ### Step 2: Login to npm CLI
+
 ```bash
 npm login
 # Enter your:
@@ -26,28 +30,33 @@ npm login
 ```
 
 Verify login:
+
 ```bash
 npm whoami
 # Should show your username
 ```
 
 ### Step 3: Check Package Name Availability
+
 ```bash
 npm search arhan
 # Or check on: https://www.npmjs.com/package/arhan
 ```
 
 **Important:** If "arhan" is taken, you need to either:
+
 - Choose a different name (e.g., `arhan-ai`, `arhan-cli`, `@yourusername/arhan`)
 - Use a scoped package: `@yourusername/arhan`
 
 ### Step 4: Update package.json (if needed)
+
 ```bash
 cd /app
 nano package.json
 ```
 
 Change name if taken:
+
 ```json
 {
   "name": "arhan-ai-cli",  // or @yourusername/arhan
@@ -57,6 +66,7 @@ Change name if taken:
 ```
 
 For scoped packages, add:
+
 ```json
 {
   "name": "@yourusername/arhan",
@@ -69,6 +79,7 @@ For scoped packages, add:
 ### Step 5: Prepare for Publishing
 
 **Update .gitignore and .npmignore:**
+
 ```bash
 cd /app
 
@@ -106,12 +117,14 @@ EOF
 ```
 
 **Verify what will be published:**
+
 ```bash
 npm pack --dry-run
 # Shows list of files that will be included
 ```
 
 ### Step 6: Build & Test
+
 ```bash
 cd /app
 
@@ -128,6 +141,7 @@ npm unlink -g arhan
 ```
 
 ### Step 7: Publish!
+
 ```bash
 cd /app
 
@@ -139,9 +153,11 @@ npm publish --access public
 ```
 
 **Success!** 🎉 Your package is now live at:
+
 - https://www.npmjs.com/package/arhan (or your package name)
 
 ### Step 8: Anyone Can Now Install
+
 ```bash
 # From any computer with Node.js:
 npm install -g arhan
@@ -161,6 +177,7 @@ cd /app
 ```
 
 **Update package.json:**
+
 ```json
 {
   "name": "@yourusername/arhan",
@@ -174,11 +191,13 @@ cd /app
 ```
 
 **Publish:**
+
 ```bash
 npm publish --access public
 ```
 
 **Users install as:**
+
 ```bash
 npm install -g @yourusername/arhan
 arhan "task"
@@ -189,11 +208,13 @@ arhan "task"
 ## Method 3: GitHub Packages (Alternative Registry)
 
 ### Setup
+
 1. Create GitHub Personal Access Token
    - Go to: https://github.com/settings/tokens
    - Create token with `write:packages` scope
 
 2. Login to GitHub registry:
+
 ```bash
 npm login --registry=https://npm.pkg.github.com
 # Username: your-github-username
@@ -202,6 +223,7 @@ npm login --registry=https://npm.pkg.github.com
 ```
 
 ### Update package.json
+
 ```json
 {
   "name": "@yourusername/arhan",
@@ -216,11 +238,13 @@ npm login --registry=https://npm.pkg.github.com
 ```
 
 ### Publish
+
 ```bash
 npm publish
 ```
 
 ### Users Install
+
 ```bash
 # Create .npmrc in their home directory:
 echo "@yourusername:registry=https://npm.pkg.github.com" >> ~/.npmrc
@@ -255,13 +279,16 @@ npm publish
 ## Method 5: Direct Distribution (No Registry)
 
 ### Option A: GitHub Releases
+
 1. Push code to GitHub
 2. Users install via:
+
 ```bash
 npm install -g https://github.com/yourusername/arhan.git
 ```
 
 ### Option B: Tarball Distribution
+
 ```bash
 # Create package
 cd /app
@@ -273,6 +300,7 @@ npm install -g /path/to/arhan-1.0.0.tgz
 ```
 
 ### Option C: Direct from Git
+
 ```bash
 npm install -g git+https://github.com/yourusername/arhan.git
 ```
@@ -284,25 +312,30 @@ npm install -g git+https://github.com/yourusername/arhan.git
 ### Updating Your Package
 
 **Patch Release (1.0.0 → 1.0.1):** Bug fixes
+
 ```bash
 npm version patch
 npm publish
 ```
 
 **Minor Release (1.0.0 → 1.1.0):** New features
+
 ```bash
 npm version minor
 npm publish
 ```
 
 **Major Release (1.0.0 → 2.0.0):** Breaking changes
+
 ```bash
 npm version major
 npm publish
 ```
 
 ### Best Practices
+
 1. Always test before publishing:
+
    ```bash
    npm run build
    npm link
@@ -324,6 +357,7 @@ npm publish
 ## Package.json Configuration Checklist
 
 ✅ **Required fields:**
+
 ```json
 {
   "name": "arhan",
@@ -340,6 +374,7 @@ npm publish
 ```
 
 ✅ **Recommended fields:**
+
 ```json
 {
   "repository": {
@@ -361,26 +396,31 @@ npm publish
 ## Post-Publishing Steps
 
 ### 1. Create npm Badge
+
 Add to README.md:
+
 ```markdown
 [![npm version](https://badge.fury.io/js/arhan.svg)](https://www.npmjs.com/package/arhan)
 [![npm downloads](https://img.shields.io/npm/dm/arhan.svg)](https://www.npmjs.com/package/arhan)
 ```
 
 ### 2. Update Installation Instructions
-```markdown
+
+````markdown
 ## Installation
 
 ```bash
 npm install -g arhan
 ```
+````
 
 ## Usage
 
 ```bash
 arhan "your coding task"
 ```
-```
+
+````
 
 ### 3. Monitor Your Package
 - npm downloads: https://npm-stat.com/charts.html?package=arhan
@@ -398,21 +438,25 @@ arhan "your coding task"
 ```bash
 npm login
 npm whoami  # Verify
-```
+````
 
 ### "402 Payment Required"
+
 - You're trying to publish private package with free account
 - Use `--access public` flag
 
 ### "Unable to authenticate"
+
 - Enable 2FA on npm account
 - Use automation tokens for CI/CD
 
 ### Files missing in published package
+
 - Check `.npmignore`
 - Use `npm pack --dry-run` to preview
 
 ### Wrong main/bin path
+
 - Ensure `dist/` is included
 - Verify paths in package.json
 
@@ -421,6 +465,7 @@ npm whoami  # Verify
 ## Security Best Practices
 
 1. **Enable 2FA on npm account**
+
    ```bash
    npm profile enable-2fa
    ```
@@ -431,6 +476,7 @@ npm whoami  # Verify
    - Don't publish unnecessary files
 
 3. **Audit dependencies**
+
    ```bash
    npm audit
    npm audit fix
@@ -501,18 +547,18 @@ npm uninstall -g arhan
 
 ## Quick Reference
 
-| Action | Command |
-|--------|---------|
-| Login to npm | `npm login` |
-| Check login | `npm whoami` |
-| Preview package | `npm pack --dry-run` |
-| Publish | `npm publish` |
-| Publish scoped | `npm publish --access public` |
-| Update patch | `npm version patch && npm publish` |
-| Update minor | `npm version minor && npm publish` |
-| Update major | `npm version major && npm publish` |
-| View package info | `npm info arhan` |
-| Unpublish (24hrs) | `npm unpublish arhan@1.0.0` |
+| Action            | Command                            |
+| ----------------- | ---------------------------------- |
+| Login to npm      | `npm login`                        |
+| Check login       | `npm whoami`                       |
+| Preview package   | `npm pack --dry-run`               |
+| Publish           | `npm publish`                      |
+| Publish scoped    | `npm publish --access public`      |
+| Update patch      | `npm version patch && npm publish` |
+| Update minor      | `npm version minor && npm publish` |
+| Update major      | `npm version major && npm publish` |
+| View package info | `npm info arhan`                   |
+| Unpublish (24hrs) | `npm unpublish arhan@1.0.0`        |
 
 ---
 
