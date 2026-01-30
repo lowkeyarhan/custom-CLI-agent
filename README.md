@@ -331,28 +331,6 @@ lowkeyarhan "Test task"
 npm unlink -g lowkeyarhan
 ```
 
-### Project Structure
-
-```
-custom-CLI-agent/
-├── src/
-│   ├── index.ts      # CLI entry point, argument parsing
-│   ├── agent.ts      # Core agent logic, LLM interaction
-│   ├── tools.ts      # Tool implementations (read/write/list/run)
-│   ├── history.ts    # Conversation history management
-│   ├── ui.ts         # Terminal UI rendering
-│   └── types.ts      # TypeScript type definitions
-├── dist/             # Compiled JavaScript (generated)
-├── .github/          # GitHub Actions workflows
-│   └── workflows/
-│       ├── ci.yml           # Continuous Integration
-│       ├── publish.yml      # Auto-publish to npm
-│       └── test-basic.yml   # Basic test workflow
-├── package.json      # Project configuration
-├── tsconfig.json     # TypeScript configuration
-└── README.md         # This file
-```
-
 ## 🔧 Troubleshooting
 
 ### Common Issues
@@ -387,33 +365,6 @@ custom-CLI-agent/
 - Use `--clear` to reset if history is corrupted
 - Specify custom path with `--history` option
 
-### Getting Help
-
-- **Issues**: [GitHub Issues](https://github.com/lowkeyarhan/custom-CLI-agent/issues)
-- **Documentation**: Check the docs in the repository
-- **OpenRouter**: [OpenRouter Docs](https://openrouter.ai/docs)
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **OpenRouter** for providing access to multiple LLM models
-- **Claude Code** for UI design inspiration
-- **OpenAI SDK** for the excellent API client
-- All the amazing open-source libraries that make this possible
-
 ## 📚 Additional Documentation
 
 - [TESTING.md](TESTING.md) - Local testing guide
@@ -423,6 +374,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ❤️ by [Arhan Dash](https://github.com/lowkeyarhan)**
-
-For questions, suggestions, or feedback, please [open an issue](https://github.com/lowkeyarhan/custom-CLI-agent/issues).
