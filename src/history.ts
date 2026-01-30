@@ -1,6 +1,6 @@
-import fs from 'fs/promises';
-import path from 'path';
-import type { ConversationHistory, Message } from './types.js';
+import fs from "fs/promises";
+import path from "path";
+import type { ConversationHistory, Message } from "./types.js";
 
 export class HistoryManager {
   private conversationFile: string;
@@ -12,7 +12,7 @@ export class HistoryManager {
 
   async load(): Promise<void> {
     try {
-      const content = await fs.readFile(this.conversationFile, 'utf-8');
+      const content = await fs.readFile(this.conversationFile, "utf-8");
       const history: ConversationHistory = JSON.parse(content);
       this.messages = history.messages || [];
     } catch (error) {
@@ -25,19 +25,19 @@ export class HistoryManager {
     try {
       const dir = path.dirname(this.conversationFile);
       await fs.mkdir(dir, { recursive: true });
-      
+
       const history: ConversationHistory = {
         messages: this.messages,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       };
-      
+
       await fs.writeFile(
         this.conversationFile,
         JSON.stringify(history, null, 2),
-        'utf-8'
+        "utf-8",
       );
     } catch (error) {
-      console.error('Failed to save conversation history:', error);
+      console.error("Failed to save conversation history:", error);
     }
   }
 

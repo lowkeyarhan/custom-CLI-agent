@@ -4,7 +4,7 @@
   "description": "AI Coding Agent CLI - Your autonomous coding assistant in the terminal",
   "main": "dist/index.js",
   "bin": {
-    "arhan": "./dist/index.js"
+    "lowkeyarhan": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",

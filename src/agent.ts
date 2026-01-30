@@ -1,10 +1,10 @@
-import OpenAI from 'openai';
-import chalk from 'chalk';
-import ora, { Ora } from 'ora';
-import inquirer from 'inquirer';
-import type { AgentConfig, Message, ToolCall } from './types.js';
-import { tools, executeTool } from './tools.js';
-import { HistoryManager } from './history.js';
+import OpenAI from "openai";
+import chalk from "chalk";
+import ora, { Ora } from "ora";
+import inquirer from "inquirer";
+import type { AgentConfig, Message, ToolCall } from "./types.js";
+import { tools, executeTool } from "./tools.js";
+import { HistoryManager } from "./history.js";
 
 const SYSTEM_PROMPT = `You are Arhan, an autonomous AI coding agent running in a terminal.
 
@@ -37,19 +37,19 @@ export class Agent {
 
   constructor(config: AgentConfig) {
     this.config = config;
-    
+
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      throw new Error('OPENROUTER_API_KEY environment variable is required');
+      throw new Error("OPENROUTER_API_KEY environment variable is required");
     }
 
     this.client = new OpenAI({
-      baseURL: 'https://openrouter.ai/api/v1',
+      baseURL: "https://openrouter.ai/api/v1",
       apiKey,
       defaultHeaders: {
-        'HTTP-Referer': process.env.APP_URL || 'http://localhost',
-        'X-Title': process.env.APP_NAME || 'Arhan CLI'
-      }
+        "HTTP-Referer": process.env.APP_URL || "http://localhost",
+        "X-Title": process.env.APP_NAME || "Arhan CLI",
+      },
     });
 
     this.spinner = ora();
@@ -58,13 +58,13 @@ export class Agent {
 
   async initialize(): Promise<void> {
     await this.history.load();
-    
+
     // Add system prompt if this is a new conversation
     const messages = this.history.getMessages();
-    if (messages.length === 0 || messages[0].role !== 'system') {
+    if (messages.length === 0 || messages[0].role !== "system") {
       this.history.addMessage({
-        role: 'system',
-        content: SYSTEM_PROMPT
+        role: "system",
+        content: SYSTEM_PROMPT,
       });
     }
   }
@@ -72,8 +72,8 @@ export class Agent {
   async run(userMessage: string): Promise<void> {
     // Add user message to history
     this.history.addMessage({
-      role: 'user',
-      content: userMessage
+      role: "user",
+      content: userMessage,
     });
 
     let iterations = 0;
@@ -81,11 +81,14 @@ export class Agent {
 
     while (shouldContinue && iterations < this.config.maxIterations) {
       iterations++;
-      
+
       try {
         shouldContinue = await this.executeIteration();
       } catch (error) {
-        console.error(chalk.red('\n❌ Error:'), error instanceof Error ? error.message : String(error));
+        console.error(
+          chalk.red("\n❌ Error:"),
+          error instanceof Error ? error.message : String(error),
+        );
         shouldContinue = false;
       }
 
@@ -94,26 +97,26 @@ export class Agent {
     }
 
     if (iterations >= this.config.maxIterations) {
-      console.log(chalk.yellow('\n⚠️  Reached maximum iterations limit'));
+      console.log(chalk.yellow("\n⚠️  Reached maximum iterations limit"));
     }
   }
 
   private async executeIteration(): Promise<boolean> {
-    this.spinner.start(chalk.blue('🤖 Arhan is thinking...'));
+    this.spinner.start(chalk.blue("🤖 Arhan is thinking..."));
 
     const messages = this.history.getMessages();
-    
+
     try {
       const stream = await this.client.chat.completions.create({
         model: this.config.model,
         messages: messages as any,
-        tools: tools.map(t => ({ type: 'function' as const, function: t })),
+        tools: tools.map((t) => ({ type: "function" as const, function: t })),
         stream: true,
         temperature: 0.7,
-        max_tokens: 4096
+        max_tokens: 4096,
       });
 
-      let assistantMessage = '';
+      let assistantMessage = "";
       let toolCalls: ToolCall[] = [];
 
       this.spinner.stop();
@@ -131,17 +134,17 @@ export class Agent {
             if (toolCallDelta.index !== undefined) {
               if (!toolCalls[toolCallDelta.index]) {
                 toolCalls[toolCallDelta.index] = {
-                  id: toolCallDelta.id || '',
-                  type: 'function',
+                  id: toolCallDelta.id || "",
+                  type: "function",
                   function: {
-                    name: '',
-                    arguments: ''
-                  }
+                    name: "",
+                    arguments: "",
+                  },
                 };
               }
 
               const tc = toolCalls[toolCallDelta.index];
-              
+
               if (toolCallDelta.id) tc.id = toolCallDelta.id;
               if (toolCallDelta.function?.name) {
                 tc.function.name = toolCallDelta.function.name;
@@ -160,8 +163,8 @@ export class Agent {
 
       // Save assistant message
       const message: Message = {
-        role: 'assistant',
-        content: assistantMessage || ''
+        role: "assistant",
+        content: assistantMessage || "",
       };
 
       if (toolCalls.length > 0) {
@@ -180,7 +183,6 @@ export class Agent {
 
       // No tool calls, conversation is complete
       return false;
-
     } catch (error) {
       this.spinner.stop();
       throw error;
@@ -189,12 +191,14 @@ export class Agent {
 
   private async executeToolCall(toolCall: ToolCall): Promise<void> {
     const { name, arguments: argsStr } = toolCall.function;
-    
+
     let args: Record<string, any>;
     try {
       args = JSON.parse(argsStr);
     } catch (error) {
-      console.error(chalk.red(`\n❌ Failed to parse tool arguments: ${argsStr}`));
+      console.error(
+        chalk.red(`\n❌ Failed to parse tool arguments: ${argsStr}`),
+      );
       return;
     }
 
@@ -203,61 +207,70 @@ export class Agent {
 
     // Check if we need user confirmation
     const needsConfirmation = await this.needsConfirmation(name, args);
-    
+
     if (needsConfirmation && !this.config.autoApprove) {
       const { confirm } = await inquirer.prompt([
         {
-          type: 'confirm',
-          name: 'confirm',
+          type: "confirm",
+          name: "confirm",
           message: chalk.yellow(`Allow ${name}?`),
-          default: name === 'read_file' || name === 'list_files'
-        }
+          default: name === "read_file" || name === "list_files",
+        },
       ]);
 
       if (!confirm) {
-        console.log(chalk.yellow('❌ Tool execution cancelled by user'));
+        console.log(chalk.yellow("❌ Tool execution cancelled by user"));
         this.history.addMessage({
-          role: 'tool',
+          role: "tool",
           tool_call_id: toolCall.id,
-          content: 'Tool execution was cancelled by the user'
+          content: "Tool execution was cancelled by the user",
         });
         return;
       }
     }
 
     // Execute tool
-    this.spinner.start(chalk.dim('Executing...'));
+    this.spinner.start(chalk.dim("Executing..."));
     const result = await executeTool(name, args);
     this.spinner.stop();
 
     if (result.success) {
-      console.log(chalk.green('✅ Success'));
+      console.log(chalk.green("✅ Success"));
       if (result.output) {
         console.log(chalk.dim(this.truncateOutput(result.output)));
       }
     } else {
-      console.log(chalk.red('❌ Error'));
-      console.log(chalk.red(result.error || 'Unknown error'));
+      console.log(chalk.red("❌ Error"));
+      console.log(chalk.red(result.error || "Unknown error"));
     }
 
     // Add tool result to history
     this.history.addMessage({
-      role: 'tool',
+      role: "tool",
       tool_call_id: toolCall.id,
-      content: result.success ? result.output : (result.error || 'Tool execution failed')
+      content: result.success
+        ? result.output
+        : result.error || "Tool execution failed",
     });
   }
 
-  private async needsConfirmation(toolName: string, args: Record<string, any>): Promise<boolean> {
+  private async needsConfirmation(
+    toolName: string,
+    args: Record<string, any>,
+  ): Promise<boolean> {
     // Always confirm writes and commands
-    if (toolName === 'write_file' || toolName === 'run_command') {
+    if (toolName === "write_file" || toolName === "run_command") {
       return true;
     }
 
     // Extra confirmation for dangerous operations
-    if (toolName === 'run_command') {
-      const cmd = args.command?.toLowerCase() || '';
-      if (cmd.includes('rm ') || cmd.includes('delete') || cmd.includes('remove')) {
+    if (toolName === "run_command") {
+      const cmd = args.command?.toLowerCase() || "";
+      if (
+        cmd.includes("rm ") ||
+        cmd.includes("delete") ||
+        cmd.includes("remove")
+      ) {
         return true;
       }
     }
@@ -270,11 +283,11 @@ export class Agent {
     if (output.length <= maxLength) {
       return output;
     }
-    return output.substring(0, maxLength) + '\n... (output truncated)';
+    return output.substring(0, maxLength) + "\n... (output truncated)";
   }
 
   async clearHistory(): Promise<void> {
     await this.history.clearFile();
-    console.log(chalk.green('✅ Conversation history cleared'));
+    console.log(chalk.green("✅ Conversation history cleared"));
   }
 }
