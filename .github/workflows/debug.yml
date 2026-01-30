@@ -1,0 +1,39 @@
+name: Debug Workflow
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Echo test
+        run: echo "Hello from GitHub Actions!"
+
+      - name: Check environment
+        run: |
+          echo "Node version:"
+          node --version
+          echo "npm version:"
+          npm --version
+          echo "Working directory:"
+          pwd
+          echo "Files in root:"
+          ls -la
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: List checked out files
+        run: |
+          echo "After checkout:"
+          ls -la
+          echo "---"
+          echo "Check if package.json exists:"
+          test -f package.json && echo "✓ package.json found" || echo "✗ package.json NOT found"
+          echo "Check if .github folder exists:"
+          test -d .github && echo "✓ .github found" || echo "✗ .github NOT found"
