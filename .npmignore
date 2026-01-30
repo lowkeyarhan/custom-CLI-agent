@@ -1,0 +1,40 @@
+# Source TypeScript files (only ship compiled JS)
+src/
+tsconfig.json
+*.ts
+!*.d.ts
+
+# Development
+node_modules/
+.env
+.env.example
+*.log
+.arhan_history.json
+
+# Testing
+tests/
+test_reports/
+test_result.md
+TESTING_GUIDE.md
+
+# Documentation (keep README, remove others)
+USAGE_EXAMPLES.md
+ARCHITECTURE.md
+QUICK_REFERENCE.md
+
+# Build artifacts
+*.tgz
+
+# Git
+.git/
+.gitignore
+
+# Project specific (not part of CLI tool)
+backend/
+frontend/
+memory/
+scripts/
+
+# Lock files
+yarn.lock
+package-lock.json
