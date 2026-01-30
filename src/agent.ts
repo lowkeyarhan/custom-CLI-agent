@@ -115,7 +115,6 @@ export class Agent {
 
       let assistantMessage = '';
       let toolCalls: ToolCall[] = [];
-      let currentToolCall: Partial<ToolCall> | null = null;
 
       this.spinner.stop();
 
