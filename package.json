@@ -1,6 +1,6 @@
 {
   "name": "lowkeyarhan",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI Coding Agent CLI with Claude Code inspired UI - Your autonomous coding assistant in the terminal",
   "main": "dist/index.js",
   "bin": {
