@@ -13,12 +13,13 @@ export type UIMessage =
   | { role: "assistant"; content: string; reasoning?: string }
   | { role: "tools"; items: ToolItem[] }
   | { role: "stats"; stats: SessionStats }
-  | { role: "error"; content: string };
+  | { role: "error"; content: string }
+  | { role: "info"; content: string };
 
 class UIStateManager extends EventEmitter {
   public messages: UIMessage[] = [];
   public currentStream: string = "";
-  public currentReasoning: string = ""; // Track what the AI is thinking
+  public currentReasoning: string = "";
   public isThinking: boolean = false;
   public isAwaitingConfirmation: boolean = false;
   public confirmationPrompt: string = "";
@@ -49,7 +50,7 @@ class UIStateManager extends EventEmitter {
 
   streamContent(content: string) {
     this.currentStream += content;
-    this.isThinking = false; // Stop thinking indicator once real content streams
+    this.isThinking = false;
     this.emit("update");
   }
 
@@ -94,10 +95,8 @@ class UIStateManager extends EventEmitter {
   async getConfirmation(toolName: string, args: any): Promise<boolean> {
     this.isAwaitingConfirmation = true;
     let preview = args.path || args.command || args.url || args.query || "";
-    if (preview.length > 40) preview = preview.substring(0, 37) + "...";
-    this.confirmationPrompt = `Allow ${toolName} (${preview})? [y/N]`;
+    this.confirmationPrompt = `Allow ${toolName} (${preview.substring(0, 35)}...)? [y/N]`;
     this.emit("update");
-
     return new Promise((resolve) => {
       this.confirmResolve = resolve;
     });
@@ -113,15 +112,17 @@ class UIStateManager extends EventEmitter {
   }
 
   complete(stats?: SessionStats) {
-    this.currentToolGroup = null;
-    if (stats) {
-      this.messages.push({ role: "stats", stats });
-    }
+    if (stats) this.messages.push({ role: "stats", stats });
     this.emit("update");
   }
 
-  error(message: string) {
-    this.messages.push({ role: "error", content: message });
+  error(content: string) {
+    this.messages.push({ role: "error", content });
+    this.emit("update");
+  }
+
+  info(content: string) {
+    this.messages.push({ role: "info", content });
     this.emit("update");
   }
 
@@ -129,7 +130,6 @@ class UIStateManager extends EventEmitter {
     this.messages = [];
     this.currentStream = "";
     this.currentReasoning = "";
-    this.currentToolGroup = null;
     this.emit("update");
   }
 }

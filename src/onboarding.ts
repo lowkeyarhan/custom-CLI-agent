@@ -5,87 +5,47 @@ import os from "os";
 import dotenv from "dotenv";
 import chalk from "chalk";
 
-const CONFIG_DIR = path.join(os.homedir(), ".lowkeyarhan");
-const ENV_FILE = path.join(CONFIG_DIR, ".env");
+const ENV_FILE = path.join(os.homedir(), ".lowkeyarhan", ".env");
 
-export async function ensureOnboarding(
-  forceSetup = false,
-  exitOnComplete?: boolean,
-): Promise<void> {
-  const shouldExit = exitOnComplete !== undefined ? exitOnComplete : forceSetup;
-
-  if (!forceSetup) {
+export async function ensureOnboarding(force = false) {
+  if (!force) {
     try {
-      const stats = await fs.stat(ENV_FILE);
-      if (stats.isFile()) {
-        const envContent = await fs.readFile(ENV_FILE, "utf-8");
-        const envConfig = dotenv.parse(envContent);
-
-        if (envConfig.BASE_URL && envConfig.API_KEY && envConfig.MODEL_ID) {
-          dotenv.config({ path: ENV_FILE });
-          return;
-        }
-      }
-    } catch (e) {
-      // Configuration file not found or invalid, proceed to onboarding
-    }
+      await fs.stat(ENV_FILE);
+      dotenv.config({ path: ENV_FILE });
+      if (process.env.BASE_URL && process.env.API_KEY && process.env.MODEL_ID)
+        return;
+    } catch {}
   }
 
-  console.log();
-  console.log(chalk.white.bold("  Setup"));
-  console.log(
-    chalk.hex("#888888")("  Configure your AI connectivity parameters.\n"),
-  );
-
-  // Using a gray '❯' instead of the default green '?'
-  const customPrefix = chalk.hex("#888888")("❯");
+  console.log(chalk.bold.white("\n  lowkeyarhan setup\n"));
+  const prompt = (msg: string) => chalk.hex("#888888")("❯ ") + msg;
 
   const answers = await inquirer.prompt([
     {
       type: "input",
       name: "baseUrl",
-      message: "Provider URL:",
-      prefix: customPrefix,
-      validate: (input) => (input ? true : "Provider URL cannot be empty"),
+      message: prompt("Provider URL:"),
+      validate: (i) => !!i,
     },
     {
       type: "password",
       name: "apiKey",
-      message: "API Key:",
+      message: prompt("API Key:"),
       mask: "*",
-      prefix: customPrefix,
-      validate: (input) => (input ? true : "API Key cannot be empty"),
+      validate: (i) => !!i,
     },
     {
       type: "input",
       name: "modelId",
-      message: "LLM Model ID:",
-      prefix: customPrefix,
-      validate: (input) => (input ? true : "Model ID cannot be empty"),
+      message: prompt("LLM Model ID:"),
+      validate: (i) => !!i,
     },
   ]);
 
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-
-  const envLines: string[] = [
-    `BASE_URL=${answers.baseUrl}`,
-    `API_KEY=${answers.apiKey}`,
-    `MODEL_ID=${answers.modelId}`,
-  ];
-
-  await fs.writeFile(ENV_FILE, envLines.join("\n") + "\n", "utf-8");
-
-  console.log();
-  console.log(chalk.hex("#888888")("  Config saved to ~/.lowkeyarhan/.env"));
-  console.log(
-    chalk.hex("#444444")(
-      "  Run 'lowkeyarhan --setup' anytime to change these settings.\n",
-    ),
+  await fs.mkdir(path.dirname(ENV_FILE), { recursive: true });
+  await fs.writeFile(
+    ENV_FILE,
+    `BASE_URL=${answers.baseUrl}\nAPI_KEY=${answers.apiKey}\nMODEL_ID=${answers.modelId}\n`,
   );
-
   dotenv.config({ path: ENV_FILE, override: true });
-
-  if (shouldExit) {
-    process.exit(0);
-  }
 }

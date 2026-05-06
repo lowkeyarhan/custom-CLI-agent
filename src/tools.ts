@@ -150,13 +150,15 @@ export async function writeFile(
 }
 
 export async function listFiles(
-  dirPath: string,
+  dirPath: string = ".", // Default to current directory
   recursive: boolean = false,
   maxDepth: number = 2,
   currentDepth: number = 0,
 ): Promise<ToolResult> {
   try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    const targetPath = dirPath.trim() === "" ? "." : dirPath;
+    const entries = await fs.readdir(targetPath, { withFileTypes: true });
+    // ... rest of the function remains the same
     let output = "";
     for (const entry of entries) {
       const indent = "  ".repeat(currentDepth);

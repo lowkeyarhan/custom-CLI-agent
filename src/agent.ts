@@ -12,14 +12,14 @@ const SYSTEM_PROMPT = `You are lowkeyarhan, an autonomous coding agent running i
 - **list_files(path, recursive?, depth?)**: List directory contents
 - **run_command(command, cwd?)**: Execute a shell command
 - **fetch_url(url, format?, extract_css?)**: Fetch a webpage.
-- **search_web(query, max_results?)**: Search the web, returns URLs + snippets
+- **search_web(query, max_results?)**: Search the web using DuckDuckGo
 
 ## STRICT RULES - FAILURE TO FOLLOW WILL RESULT IN SYSTEM CRASH
-1. **NO CHATTY CODE DUMPS:** NEVER output code blocks or file contents in your text response. YOU MUST ALWAYS use the \`write_file\` tool to save code directly to the user's disk. 
-2. **MULTI-FILE GENERATION:** If a task requires multiple files (e.g., index.html, style.css, script.js), you MUST call \`write_file\` for EVERY single file before finishing. Do not leave it to the user.
+1. **NO CHATTY CODE DUMPS:** NEVER output code blocks or file contents in your text response. YOU MUST ALWAYS use the 'write_file' tool to save code directly to the user's disk. 
+2. **MULTI-FILE GENERATION:** If a task requires multiple files, you MUST call 'write_file' for EVERY single file. Do not leave implementation to the user.
 3. **ACT, DON'T TALK:** Never describe what you are going to do or provide step-by-step text explanations. Just execute the tool calls.
-4. **COMPLETE TASKS FULLY:** Do not stop and ask for confirmation mid-task.
-5. **VERIFY YOUR WORK:** For shell commands that build or test code, always check the exit code / output.`;
+4. **COMPLETE TASKS FULLY:** Do not stop and ask for confirmation mid-task unless the user must provide specific missing information.
+5. **VERIFY YOUR WORK:** After writing files, always read them back or run commands to confirm they are correct and error-free.`;
 
 export class Agent {
   private client!: OpenAI;
@@ -100,10 +100,10 @@ export class Agent {
         messages: messages as any,
         tools: tools.map((t) => ({ type: "function" as const, function: t })),
         stream: true,
-        temperature: 0.7,
+        stream_options: { include_usage: true },
       });
     } catch (error: any) {
-      throw new Error(`API error: ${error?.message || String(error)}`);
+      throw new Error(`API: ${error?.message || "Unknown provider error"}`);
     }
 
     let assistantMessage = "";
@@ -114,21 +114,30 @@ export class Agent {
 
     try {
       for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta as any;
+        // Handle Usage Data
+        if (chunk.usage) {
+          this.sessionInputTokens += chunk.usage.prompt_tokens || 0;
+          this.sessionOutputTokens += chunk.usage.completion_tokens || 0;
+        }
 
-        // 1. Handle native OpenRouter reasoning (DeepSeek R1 / Claude 3.7)
-        if (delta?.reasoning) {
+        const delta = chunk.choices[0]?.delta as any;
+        if (!delta) continue;
+
+        // 1. Capture Raw Reasoning (OpenRouter/Claude/DeepSeek support)
+        if (delta.reasoning) {
           UI.streamReasoning(delta.reasoning);
         }
 
-        // 2. Handle embedded <think> tags
-        if (delta?.content) {
+        // 2. Handle Text Content and <think> tags
+        if (delta.content) {
           let content = delta.content;
 
+          // Manual <think> tag parsing for models that don't support reasoning field
           if (content.includes("<think>")) {
             inThinkBlock = true;
             content = content.replace("<think>", "");
           }
+
           if (content.includes("</think>")) {
             inThinkBlock = false;
             const parts = content.split("</think>");
@@ -146,29 +155,28 @@ export class Agent {
           }
         }
 
-        if (delta?.tool_calls) {
-          for (const toolCallDelta of delta.tool_calls) {
-            if (toolCallDelta.index !== undefined) {
-              if (!toolCalls[toolCallDelta.index]) {
-                toolCalls[toolCallDelta.index] = {
-                  id: toolCallDelta.id || "",
-                  type: "function",
-                  function: { name: "", arguments: "" },
-                };
-              }
-              const tc = toolCalls[toolCallDelta.index];
-              if (toolCallDelta.id) tc.id = toolCallDelta.id;
-              if (toolCallDelta.function?.name)
-                tc.function.name = toolCallDelta.function.name;
-              if (toolCallDelta.function?.arguments)
-                tc.function.arguments += toolCallDelta.function.arguments;
+        // 3. Aggregate Tool Calls
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index;
+            if (!toolCalls[idx]) {
+              toolCalls[idx] = {
+                id: tc.id || "",
+                type: "function",
+                function: { name: "", arguments: "" },
+              };
             }
+            if (tc.id) toolCalls[idx].id = tc.id;
+            if (tc.function?.name)
+              toolCalls[idx].function.name = tc.function.name;
+            if (tc.function?.arguments)
+              toolCalls[idx].function.arguments += tc.function.arguments;
           }
         }
       }
-    } catch (streamError: any) {
+    } catch (err: any) {
       UI.stopThinking();
-      throw new Error(`Stream Error: ${streamError.message}`);
+      throw err;
     }
 
     UI.stopThinking();
@@ -184,13 +192,15 @@ export class Agent {
     if (toolCalls.length > 0) message.tool_calls = toolCalls;
     this.history.addMessage(message);
 
+    // Execute Tools if any
     if (toolCalls.length > 0) {
-      for (const toolCall of toolCalls) {
-        await this.executeToolCall(toolCall);
+      for (const call of toolCalls) {
+        await this.executeToolCall(call);
       }
-      return true;
+      return true; // Continue to next turn to process tool results
     }
-    return false;
+
+    return false; // Task appears done or just chat response
   }
 
   private async executeToolCall(toolCall: ToolCall): Promise<void> {
@@ -210,35 +220,38 @@ export class Agent {
       this.history.addMessage({
         role: "tool",
         tool_call_id: toolCall.id,
-        content: `Failed to parse arguments: ${argsStr}`,
+        content: "Error: Invalid JSON arguments",
       });
       return;
     }
 
+    // Determine if tool needs user confirmation
     const needsConf = name === "write_file" || name === "run_command";
     const id = UI.toolCallStart(name, args);
 
     if (needsConf && !this.config.autoApprove) {
-      const confirm = await UI.getConfirmation(name, args);
-      if (!confirm) {
+      const confirmed = await UI.getConfirmation(name, args);
+      if (!confirmed) {
         UI.toolCallResult(id, false, "", "Cancelled by user");
         this.history.addMessage({
           role: "tool",
           tool_call_id: toolCall.id,
-          content: "Cancelled",
+          content: "User cancelled this operation.",
         });
         return;
       }
     }
 
+    // Execute the actual logic
     const result = await executeTool(name, args);
     UI.toolCallResult(id, result.success, result.output, result.error);
+
     this.history.addMessage({
       role: "tool",
       tool_call_id: toolCall.id,
       content: result.success
         ? result.output
-        : result.error || "Tool execution failed",
+        : result.error || "Execution failed",
     });
   }
 
