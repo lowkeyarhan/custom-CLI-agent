@@ -1,6 +1,4 @@
 import OpenAI from "openai";
-import inquirer from "inquirer";
-import ora, { Ora } from "ora";
 import type { AgentConfig, Message, ToolCall } from "./types.js";
 import { tools, executeTool } from "./tools.js";
 import { HistoryManager } from "./history.js";
@@ -9,34 +7,22 @@ import { UI } from "./ui.js";
 const SYSTEM_PROMPT = `You are lowkeyarhan, an autonomous coding agent running in the terminal.
 
 ## Tools Available
-
-- **read_file(path)** — Read a file's contents
-- **write_file(path, content)** — Create or overwrite a file
-- **list_files(path, recursive?, depth?)** — List directory contents
-- **run_command(command, cwd?)** — Execute a shell command
-- **fetch_url(url, format?, extract_css?)** — Fetch a webpage. Use format="html" 
-  when cloning sites (preserves structure). Use extract_css=true to get styles too.
-- **search_web(query, max_results?)** — Search DuckDuckGo, returns URLs + snippets
+- **read_file(path)**: Read a file's contents
+- **write_file(path, content)**: Create or overwrite a file
+- **list_files(path, recursive?, depth?)**: List directory contents
+- **run_command(command, cwd?)**: Execute a shell command
+- **fetch_url(url, format?, extract_css?)**: Fetch a webpage.
+- **search_web(query, max_results?)**: Search the web, returns URLs + snippets
 
 ## Rules
-
-1. When the user provides a URL, immediately call fetch_url on it before doing 
-   anything else.
-2. When cloning a website: fetch_url first with format="html", study the structure 
-   (sections, class names, colour scheme, fonts, layout), then build a faithful 
-   reproduction as a single self-contained .html file with embedded CSS and JS.
-3. Always verify your work: after writing a file, read it back or run a command 
-   to confirm it was written correctly.
-4. Never describe what you're going to do — just do it with tool calls.
-5. Complete tasks fully. Do not stop and ask for confirmation mid-task.
-6. For shell commands that build or test code, always check the exit code / output.`;
+1. Never describe what you're going to do - just do it with tool calls.
+2. Complete tasks fully. Do not stop and ask for confirmation mid-task.
+3. For shell commands that build or test code, always check the exit code / output.`;
 
 export class Agent {
   private client!: OpenAI;
   private config: AgentConfig;
   private history: HistoryManager;
-  private spinner: Ora | null = null;
-  private provider: string;
 
   private sessionInputTokens = 0;
   private sessionOutputTokens = 0;
@@ -45,64 +31,24 @@ export class Agent {
 
   constructor(config: AgentConfig) {
     this.config = config;
-
-    this.provider = process.env.PROVIDER || "openrouter";
     this.initClient();
     this.history = new HistoryManager(config.conversationFile);
   }
 
-  public updateConfig(config: AgentConfig, provider?: string) {
+  public updateConfig(config: AgentConfig) {
     this.config = config;
-    if (provider) {
-      this.provider = provider;
-    }
     this.initClient();
   }
 
   private initClient() {
-    const providerConfigs: Record<string, { baseURL: string; apiKey: string }> =
-      {
-        openrouter: {
-          baseURL: "https://openrouter.ai/api/v1",
-          apiKey: process.env.OPENROUTER_API_KEY || "",
-        },
-        openai: {
-          baseURL: "https://api.openai.com/v1",
-          apiKey: process.env.OPENAI_API_KEY || "",
-        },
-        anthropic: {
-          baseURL: "https://api.anthropic.com/v1",
-          apiKey: process.env.ANTHROPIC_API_KEY || "",
-        },
-        google: {
-          baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-          apiKey: process.env.GOOGLE_API_KEY || "",
-        },
-        custom: {
-          baseURL: process.env.CUSTOM_BASE_URL || "http://localhost:11434/v1",
-          apiKey: process.env.CUSTOM_API_KEY || "ollama",
-        },
-      };
-
-    const providerConfig =
-      providerConfigs[this.provider] || providerConfigs.openrouter;
-
-    if (!providerConfig.apiKey) {
-      throw new Error(
-        `No API key found for provider "${this.provider}". Run 'lowkeyarhan --setup' to configure.`,
-      );
-    }
-
+    if (!this.config.apiKey || !this.config.baseURL) return;
     this.client = new OpenAI({
-      baseURL: providerConfig.baseURL,
-      apiKey: providerConfig.apiKey,
-      defaultHeaders:
-        this.provider === "openrouter"
-          ? {
-              "HTTP-Referer": process.env.APP_URL || "http://localhost",
-              "X-Title": process.env.APP_NAME || "lowkeyarhan",
-            }
-          : {},
+      baseURL: this.config.baseURL,
+      apiKey: this.config.apiKey,
+      defaultHeaders: {
+        "HTTP-Referer": process.env.APP_URL || "http://localhost",
+        "X-Title": process.env.APP_NAME || "lowkeyarhan",
+      },
     });
   }
 
@@ -115,13 +61,6 @@ export class Agent {
   }
 
   async run(userMessage: string): Promise<void> {
-    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
-    const foundUrls = userMessage.match(urlRegex);
-
-    if (foundUrls && foundUrls.length > 0) {
-      userMessage += `\n\n[URLs detected in message: ${foundUrls.join(", ")}. Use fetch_url to read these pages before responding.]`;
-    }
-
     this.history.addMessage({ role: "user", content: userMessage });
 
     let iterations = 0;
@@ -137,12 +76,7 @@ export class Agent {
         UI.error(error instanceof Error ? error.message : String(error));
         shouldContinue = false;
       }
-
       await this.history.save();
-    }
-
-    if (iterations >= this.config.maxIterations) {
-      UI.maxIterations();
     }
 
     UI.complete({
@@ -156,104 +90,61 @@ export class Agent {
   private async executeIteration(): Promise<boolean> {
     const messages = this.history.getMessages();
     const iterationStartTime = Date.now();
-    let firstTokenTime: number | null = null;
-    let currentMaxTokens = 4096;
-
     let stream;
 
     try {
-      try {
-        stream = await this.client.chat.completions.create({
-          model: this.config.model,
-          messages: messages as any,
-          tools: tools.map((t) => ({ type: "function" as const, function: t })),
-          stream: true,
-          temperature: 0.7,
-          max_tokens: currentMaxTokens,
-          stream_options: { include_usage: true },
-        });
-      } catch (err: any) {
-        const errStr = String(err);
-        if (
-          errStr.includes("400") &&
-          (errStr.toLowerCase().includes("max_tokens") ||
-            errStr.toLowerCase().includes("context length"))
-        ) {
-          stream = await this.client.chat.completions.create({
-            model: this.config.model,
-            messages: messages as any,
-            tools: tools.map((t) => ({
-              type: "function" as const,
-              function: t,
-            })),
-            stream: true,
-            temperature: 0.7,
-            max_tokens: 2048,
-            stream_options: { include_usage: true },
-          });
-        } else {
-          throw err;
-        }
-      }
+      stream = await this.client.chat.completions.create({
+        model: this.config.model,
+        messages: messages as any,
+        tools: tools.map((t) => ({ type: "function" as const, function: t })),
+        stream: true,
+        temperature: 0.7,
+      });
     } catch (error: any) {
-      if (this.spinner?.isSpinning) this.spinner.stop();
-      let errorMessage =
-        error?.response?.data?.error?.message ||
-        error?.message ||
-        String(error);
-      throw new Error(`API error: ${errorMessage}`);
+      throw new Error(`API error: ${error?.message || String(error)}`);
     }
 
     let assistantMessage = "";
     let toolCalls: ToolCall[] = [];
+    let inThinkBlock = false;
 
-    let hasShownThinking = false;
-    let usageData: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      total_tokens?: number;
-      reasoning_tokens?: number;
-    } | null = null;
-
-    this.spinner = ora({
-      text: "Thinking",
-      color: "green",
-      spinner: "dots",
-    }).start();
+    UI.startThinking();
 
     try {
       for await (const chunk of stream) {
-        if (chunk.usage && chunk.usage.total_tokens) {
-          usageData = chunk.usage;
+        const delta = chunk.choices[0]?.delta as any;
+
+        // 1. Handle native OpenRouter reasoning (DeepSeek R1 / Claude 3.7)
+        if (delta?.reasoning) {
+          UI.streamReasoning(delta.reasoning);
         }
 
-        const delta = chunk.choices[0]?.delta;
-
+        // 2. Handle embedded <think> tags
         if (delta?.content) {
-          if (!firstTokenTime && delta.content.trim()) {
-            firstTokenTime = Date.now();
+          let content = delta.content;
+
+          if (content.includes("<think>")) {
+            inThinkBlock = true;
+            content = content.replace("<think>", "");
+          }
+          if (content.includes("</think>")) {
+            inThinkBlock = false;
+            const parts = content.split("</think>");
+            UI.streamReasoning(parts[0]);
+            UI.streamContent(parts[1]);
+            assistantMessage += parts[1];
+            continue;
           }
 
-          if (!hasShownThinking && delta.content.trim()) {
-            this.spinner?.stop();
-            this.spinner?.clear();
-            hasShownThinking = true;
+          if (inThinkBlock) {
+            UI.streamReasoning(content);
+          } else {
+            UI.streamContent(content);
+            assistantMessage += content;
           }
-
-          UI.streamContent(delta.content);
-          assistantMessage += delta.content;
         }
 
         if (delta?.tool_calls) {
-          if (!hasShownThinking) {
-            this.spinner?.stop();
-            this.spinner?.clear();
-            hasShownThinking = true;
-          }
-          if (!firstTokenTime) {
-            firstTokenTime = Date.now();
-          }
-
           for (const toolCallDelta of delta.tool_calls) {
             if (toolCallDelta.index !== undefined) {
               if (!toolCalls[toolCallDelta.index]) {
@@ -274,44 +165,15 @@ export class Agent {
         }
       }
     } catch (streamError: any) {
-      if (this.spinner?.isSpinning) {
-        this.spinner.stop();
-        this.spinner.clear();
-      }
+      UI.stopThinking();
       throw new Error(`Stream Error: ${streamError.message}`);
     }
 
-    if (this.spinner?.isSpinning) {
-      this.spinner.stop();
-      this.spinner.clear();
-    }
-
-    if (assistantMessage) {
-      UI.streamComplete();
-    }
+    UI.stopThinking();
+    UI.streamComplete();
 
     const iterationEndTime = Date.now();
-    const totalTime = iterationEndTime - iterationStartTime;
-    const ttft = firstTokenTime ? firstTokenTime - iterationStartTime : null;
-
-    this.sessionTotalMs += totalTime;
-
-    if (usageData) {
-      if (usageData.prompt_tokens)
-        this.sessionInputTokens += usageData.prompt_tokens;
-      if (usageData.completion_tokens)
-        this.sessionOutputTokens += usageData.completion_tokens;
-    }
-
-    if (usageData || ttft !== null) {
-      UI.usageStats({
-        inputTokens: usageData?.prompt_tokens ?? null,
-        outputTokens: usageData?.completion_tokens ?? null,
-        reasoningTokens: usageData?.reasoning_tokens ?? null,
-        ttftMs: ttft,
-        totalMs: totalTime,
-      });
-    }
+    this.sessionTotalMs += iterationEndTime - iterationStartTime;
 
     const message: Message = {
       role: "assistant",
@@ -324,26 +186,24 @@ export class Agent {
       for (const toolCall of toolCalls) {
         await this.executeToolCall(toolCall);
       }
-      return true; // Continue after tools
+      return true;
     }
-
-    return false; // End
+    return false;
   }
 
   private async executeToolCall(toolCall: ToolCall): Promise<void> {
     const { name, arguments: argsStr } = toolCall.function;
-
     let args: Record<string, any>;
+
     try {
       args = JSON.parse(argsStr);
     } catch (error) {
-      UI.toolCallStart(name, {});
+      const id = UI.toolCallStart(name, {});
       UI.toolCallResult(
+        id,
         false,
         "",
         `Failed to parse tool arguments: ${argsStr}`,
-        name,
-        {},
       );
       this.history.addMessage({
         role: "tool",
@@ -353,23 +213,13 @@ export class Agent {
       return;
     }
 
-    const needsConf = await this.needsConfirmation(name, args);
-    if (!needsConf || this.config.autoApprove) {
-      UI.toolCallStart(name, args);
-    }
+    const needsConf = name === "write_file" || name === "run_command";
+    const id = UI.toolCallStart(name, args);
 
     if (needsConf && !this.config.autoApprove) {
-      const { confirm } = await inquirer.prompt([
-        {
-          type: "confirm",
-          name: "confirm",
-          message: UI.confirmation(name, args),
-          default: name === "read_file" || name === "list_files",
-        },
-      ]);
-
+      const confirm = await UI.getConfirmation(name, args);
       if (!confirm) {
-        UI.cancelled();
+        UI.toolCallResult(id, false, "", "Cancelled by user");
         this.history.addMessage({
           role: "tool",
           tool_call_id: toolCall.id,
@@ -377,14 +227,10 @@ export class Agent {
         });
         return;
       }
-
-      UI.toolCallStart(name, args);
     }
 
     const result = await executeTool(name, args);
-
-    UI.toolCallResult(result.success, result.output, result.error, name, args);
-
+    UI.toolCallResult(id, result.success, result.output, result.error);
     this.history.addMessage({
       role: "tool",
       tool_call_id: toolCall.id,
@@ -394,19 +240,9 @@ export class Agent {
     });
   }
 
-  private async needsConfirmation(
-    toolName: string,
-    _args: Record<string, any>,
-  ): Promise<boolean> {
-    if (toolName === "write_file" || toolName === "run_command") return true;
-    if (toolName === "fetch_url" || toolName === "search_web") return false; // read-only
-    return false;
-  }
-
   async clearHistory(): Promise<void> {
     await this.history.clearFile();
     this.history.addMessage({ role: "system", content: SYSTEM_PROMPT });
     await this.history.save();
-    UI.info("\u2713 Conversation history cleared");
   }
 }

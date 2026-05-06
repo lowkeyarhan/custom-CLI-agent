@@ -1,6 +1,7 @@
 {
   "name": "lowkeyarhan",
   "version": "1.1.0",
+  "type": "module",
   "description": "AI Coding Agent CLI with Claude Code inspired UI - Your autonomous coding assistant in the terminal",
   "main": "dist/index.js",
   "bin": {
@@ -50,13 +51,18 @@
     "chalk": "^5.3.0",
     "commander": "^11.1.0",
     "dotenv": "^16.3.1",
+    "ink": "^7.0.2",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
     "inquirer": "^9.2.12",
     "openai": "^4.20.1",
-    "ora": "^7.0.1"
+    "ora": "^7.0.1",
+    "react": "^19.2.5"
   },
   "devDependencies": {
     "@types/inquirer": "^9.0.7",
     "@types/node": "^20.10.4",
+    "@types/react": "^19.2.14",
     "typescript": "^5.3.3"
   },
   "engines": {

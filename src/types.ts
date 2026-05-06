@@ -44,6 +44,8 @@ export interface ConversationHistory {
 }
 
 export interface AgentConfig {
+  baseURL: string;
+  apiKey: string;
   model: string;
   autoApprove: boolean;
   maxIterations: number;
