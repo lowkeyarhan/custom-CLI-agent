@@ -9,8 +9,12 @@ import { UI } from "./ui.js";
 const CONFIG_DIR = path.join(os.homedir(), ".lowkeyarhan");
 const ENV_FILE = path.join(CONFIG_DIR, ".env");
 
-export async function ensureOnboarding(): Promise<void> {
-  const isSetup = process.argv.includes("--setup");
+export async function ensureOnboarding(
+  forceSetup = false,
+  exitOnComplete?: boolean,
+): Promise<void> {
+  const isSetup = forceSetup;
+  const shouldExit = exitOnComplete !== undefined ? exitOnComplete : forceSetup;
 
   if (!isSetup) {
     try {
@@ -41,8 +45,8 @@ export async function ensureOnboarding(): Promise<void> {
         }
 
         if (hasKey) {
-          // If valid config exists and and no --setup flag, load it and proceed
-          dotenv.config({ path: ENV_FILE, override: true });
+          // If a valid global config exists and --setup is absent, proceed.
+          dotenv.config({ path: ENV_FILE });
           return;
         }
       }
@@ -119,7 +123,7 @@ export async function ensureOnboarding(): Promise<void> {
   }
 
   // Testing connection
-  
+
   const spinner = ora("Testing connection...").start();
 
   try {
@@ -139,9 +143,8 @@ export async function ensureOnboarding(): Promise<void> {
       if (res.status === 401 || res.status === 403) {
         throw new Error("Invalid API key");
       }
-      
     } else {
-       // skip test for custom before getting base url
+      // skip test for custom before getting base url
     }
 
     spinner.succeed("  ✓ Connection verified");
@@ -291,7 +294,7 @@ export async function ensureOnboarding(): Promise<void> {
   // Load into env for this process
   dotenv.config({ path: ENV_FILE, override: true });
 
-  if (isSetup) {
+  if (shouldExit) {
     process.exit(0);
   }
 }

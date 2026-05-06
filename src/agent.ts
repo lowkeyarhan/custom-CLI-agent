@@ -32,7 +32,7 @@ const SYSTEM_PROMPT = `You are lowkeyarhan, an autonomous coding agent running i
 6. For shell commands that build or test code, always check the exit code / output.`;
 
 export class Agent {
-  private client: OpenAI;
+  private client!: OpenAI;
   private config: AgentConfig;
   private history: HistoryManager;
   private spinner: Ora | null = null;
@@ -47,7 +47,19 @@ export class Agent {
     this.config = config;
 
     this.provider = process.env.PROVIDER || "openrouter";
+    this.initClient();
+    this.history = new HistoryManager(config.conversationFile);
+  }
 
+  public updateConfig(config: AgentConfig, provider?: string) {
+    this.config = config;
+    if (provider) {
+      this.provider = provider;
+    }
+    this.initClient();
+  }
+
+  private initClient() {
     const providerConfigs: Record<string, { baseURL: string; apiKey: string }> =
       {
         openrouter: {
@@ -92,8 +104,6 @@ export class Agent {
             }
           : {},
     });
-
-    this.history = new HistoryManager(config.conversationFile);
   }
 
   async initialize(): Promise<void> {
@@ -161,7 +171,6 @@ export class Agent {
           temperature: 0.7,
           max_tokens: currentMaxTokens,
           stream_options: { include_usage: true },
-          parallel_tool_calls: false,
         });
       } catch (err: any) {
         const errStr = String(err);
@@ -181,7 +190,6 @@ export class Agent {
             temperature: 0.7,
             max_tokens: 2048,
             stream_options: { include_usage: true },
-            parallel_tool_calls: false,
           });
         } else {
           throw err;
@@ -345,13 +353,12 @@ export class Agent {
       return;
     }
 
-    // Log the start on the same line
-    UI.toolCallStart(name, args);
-
     const needsConf = await this.needsConfirmation(name, args);
+    if (!needsConf || this.config.autoApprove) {
+      UI.toolCallStart(name, args);
+    }
+
     if (needsConf && !this.config.autoApprove) {
-      // Must newline before Inquirer if we are half-line
-      // UI.confirmation does this.
       const { confirm } = await inquirer.prompt([
         {
           type: "confirm",
@@ -371,7 +378,6 @@ export class Agent {
         return;
       }
 
-      // Reprint tool call start because Inquirer broke the line
       UI.toolCallStart(name, args);
     }
 
@@ -399,6 +405,8 @@ export class Agent {
 
   async clearHistory(): Promise<void> {
     await this.history.clearFile();
+    this.history.addMessage({ role: "system", content: SYSTEM_PROMPT });
+    await this.history.save();
     UI.info("\u2713 Conversation history cleared");
   }
 }

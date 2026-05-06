@@ -358,93 +358,110 @@ export async function searchWeb(
 ): Promise<ToolResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
-  maxResults = Math.min(10, Math.max(1, maxResults));
+  const resultLimit = Math.min(10, Math.max(1, Number(maxResults) || 5));
+
+  const cleanHtml = (value: string): string =>
+    value
+      .replace(/(<([^>]+)>)/gi, "")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const unwrapDuckDuckGoUrl = (url: string): string => {
+    const normalized = url.replace(/&amp;/g, "&");
+    try {
+      const parsed = new URL(normalized, "https://lite.duckduckgo.com");
+      const uddg = parsed.searchParams.get("uddg");
+      return uddg || parsed.href;
+    } catch {
+      return normalized;
+    }
+  };
 
   try {
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
     const response = await fetch(searchUrl, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
         Accept:
           "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Language": "en-US,en;q=0.5",
         "Accept-Encoding": "identity",
-        "Cache-Control": "no-cache",
       },
       signal: controller.signal,
     });
 
-    if (response.status >= 400) throw new Error("Search blocked");
-
-    const html = await response.text();
     clearTimeout(timeout);
 
-    const titles = [
+    if (response.status >= 400) {
+      return {
+        success: false,
+        output: "",
+        error: `Search blocked (${response.status}). Try fetch_url with a specific URL instead.`,
+      };
+    }
+
+    const html = await response.text();
+
+    const linkMatches = [
       ...html.matchAll(
-        /<h2 class="result__title">\s*<a class="result__a"[^>]*>(.*?)<\/a>/gis,
+        /<a\b(?=[^>]*\bclass=["'][^"']*\bresult-link\b[^"']*["'])(?=[^>]*\bhref=["']([^"']+)["'])[^>]*>([\s\S]*?)<\/a>/gi,
       ),
     ];
-    const urls = [...html.matchAll(/<a class="result__a" href="([^"]+)">/gi)];
-    const snippets = [
-      ...html.matchAll(/<a class="result__snippet[^>]*>(.*?)<\/a>/gis),
+    const snippetMatches = [
+      ...html.matchAll(
+        /<td\b(?=[^>]*\bclass=["'][^"']*\bresult-snippet\b[^"']*["'])[^>]*>([\s\S]*?)<\/td>/gi,
+      ),
     ];
 
     const results: string[] = [];
-    for (
-      let i = 0;
-      i < Math.min(maxResults, titles.length, urls.length, snippets.length);
-      i++
-    ) {
-      let title = titles[i][1].replace(/(<([^>]+)>)/gi, "");
-      let url = urls[i][1];
-      if (url.includes("uddg=")) {
-        const m = url.match(/uddg=([^&]+)/);
-        if (m) url = decodeURIComponent(m[1]);
-      } else if (url.startsWith("//")) {
-        url = "https:" + url;
-      }
-      let snippet = snippets[i][1].replace(/(<([^>]+)>)/gi, "");
-      results.push(`${i + 1}. ${title}\n   ${url}\n   ${snippet}\n`);
+    for (let i = 0; i < Math.min(resultLimit, linkMatches.length); i++) {
+      const url = unwrapDuckDuckGoUrl(linkMatches[i][1]);
+      const title = cleanHtml(linkMatches[i][2]);
+      const snippet = snippetMatches[i] ? cleanHtml(snippetMatches[i][1]) : "";
+      results.push(
+        `${i + 1}. ${title}\n   ${url}${snippet ? `\n   ${snippet}` : ""}\n`,
+      );
     }
 
     if (results.length > 0) {
       return { success: true, output: results.join("\n") };
     }
 
-    // Fallback DDG instant
-    const fallbackUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-    const fallbackRes = await fetch(fallbackUrl);
-    const fallbackData: any = await fallbackRes.json();
+    const iaUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    const iaRes = await fetch(iaUrl, { signal: AbortSignal.timeout(8000) });
+    const iaData: any = await iaRes.json();
 
-    if (fallbackData.RelatedTopics && fallbackData.RelatedTopics.length > 0) {
-      const topTopics = fallbackData.RelatedTopics.filter(
-        (t: any) => t.Text && t.FirstURL,
-      ).slice(0, maxResults);
-      if (topTopics.length > 0) {
-        const out = topTopics
-          .map((t: any, i: number) => `${i + 1}. ${t.Text}\n   ${t.FirstURL}\n`)
-          .join("\n");
-        return { success: true, output: out };
-      }
+    if (iaData.AbstractText) {
+      return {
+        success: true,
+        output: `1. ${iaData.Heading}\n   ${iaData.AbstractURL}\n   ${iaData.AbstractText}\n`,
+      };
     }
 
     return {
       success: true,
-      output: `No results found for: ${query}. Try a different search term.`,
+      output: `No results found for: "${query}"\n\nTip: Use fetch_url with a direct URL instead, or try a more specific query.`,
     };
   } catch (error: any) {
     clearTimeout(timeout);
-    if (error.name === "AbortError")
+    if (error.name === "AbortError") {
       return {
         success: false,
         output: "",
-        error: `Request timed out after 20s for ${query}`,
+        error: `Search timed out. Use fetch_url with a specific URL instead.`,
       };
+    }
     return {
       success: false,
       output: "",
-      error: `Search failed: ${error.message}`,
+      error: `Search failed: ${error.message}. Use fetch_url with a specific URL instead.`,
     };
   }
 }

@@ -31,6 +31,29 @@ export class UI {
     console.log();
   }
 
+  static help() {
+    this.ensureNewline();
+    console.log();
+    console.log(colors.accent("> ") + colors.white("Commands"));
+    console.log(
+      colors.dimText("  /help") + colors.white("    Show this help message"),
+    );
+    console.log(
+      colors.dimText("  /setup") +
+        colors.white(
+          "   Reconfigure provider, API key, and model (or /models, /config)",
+        ),
+    );
+    console.log(
+      colors.dimText("  /clear") +
+        colors.white("   Clear conversation history"),
+    );
+    console.log(
+      colors.dimText("  /exit") + colors.white("    Exit the agent (or quit)"),
+    );
+    console.log();
+  }
+
   static info(message: string) {
     this.ensureNewline();
     console.log(colors.dimText("  " + message));
@@ -179,7 +202,19 @@ export class UI {
         const dirCount = linesList.filter((l) => l.includes("📁")).length;
         return `${fileCount} files, ${dirCount} dirs`;
       case "run_command":
-        return "✓ exit 0";
+        const firstLine = output
+          .split("\n")
+          .map((line) => line.trim())
+          .find(Boolean);
+        if (
+          !firstLine ||
+          firstLine === "Command executed successfully (no output)"
+        ) {
+          return "Success";
+        }
+        return firstLine.length > 80
+          ? firstLine.substring(0, 77) + "..."
+          : firstLine;
       case "fetch_url":
         const match = output.match(/Returned: (\d+) chars \| Format: ([a-z]+)/);
         if (match) {
