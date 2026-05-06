@@ -1,234 +1,312 @@
 import chalk from "chalk";
+import { UsageStats, SessionStats } from "./types.js";
 
-// Claude Code inspired color scheme - Coral & Blue
+// Exact Claude Code Color Palette
 const colors = {
-  // Primary accent - coral/orange
-  accent: chalk.hex("#FF6B4A"),
-  // Secondary - blue/cyan
-  blue: chalk.hex("#4A90E2"),
-  // Text colors
-  text: chalk.hex("#E8E8E8"),
-  textDim: chalk.hex("#808080"),
-  textVeryDim: chalk.hex("#505050"),
-  // Status colors
-  success: chalk.hex("#5ECC8A"),
-  error: chalk.hex("#FF5555"),
-  warning: chalk.hex("#FFB84A"),
-  // Special
-  keyword: chalk.hex("#FF8C66"),
-  comment: chalk.hex("#6B7280"),
+  accent: chalk.hex("#A8CC8C"), // muted green (> prompt and ✓ checkmarks)
+  toolName: chalk.hex("#E8B86D"), // warm amber (tool names, "Done", "Task")
+  dimText: chalk.hex("#666666"), // medium gray (stats, secondary info)
+  veryDimText: chalk.hex("#444444"), // dark gray (separators, very minor info)
+  white: chalk.hex("#EEEEEE"), // near-white (primary content, task text)
+  errorRed: chalk.hex("#CC8888"), // muted red (errors)
+  warningAmb: chalk.hex("#E8B86D"), // same as toolName for warnings
+  success: chalk.hex("#A8CC8C"), // same as accent
+  keyword: chalk.hex("#E8B86D"), // same as toolName
 };
 
 export class UI {
+  private static _pendingToolLine = false;
+
+  private static ensureNewline() {
+    if (this._pendingToolLine) {
+      process.stdout.write("\n");
+      this._pendingToolLine = false;
+    }
+  }
+
   static welcome() {
+    this.ensureNewline();
     console.log();
-    console.log(colors.accent("* ") + colors.text("Welcome to lowkeyarhan!"));
+    console.log(colors.accent("> ") + colors.white("lowkeyarhan"));
     console.log();
   }
 
-  static header(title: string, subtitle?: string) {
-    console.log();
-    console.log(colors.accent("* ") + colors.text(title));
-    if (subtitle) {
-      console.log(colors.textDim(`  ${subtitle}`));
-    }
-    console.log();
+  static info(message: string) {
+    this.ensureNewline();
+    console.log(colors.dimText("  " + message));
   }
 
   static taskStart(task: string) {
-    console.log(colors.accent("* ") + colors.keyword("Task"));
-    console.log(colors.textVeryDim("  " + "─".repeat(60)));
-    console.log(colors.text("  " + task));
-    console.log(colors.textVeryDim("  " + "─".repeat(60)));
+    this.ensureNewline();
+    console.log();
+    console.log(colors.accent("> ") + colors.toolName("Task"));
+    console.log(colors.white("  " + task));
     console.log();
   }
 
-  static thinking() {
-    // This is now handled by ora spinner in agent.ts
-    // Kept for backwards compatibility but not used
+  static prompt(): string {
+    this.ensureNewline();
+    return colors.accent("> ");
   }
 
   static streamContent(content: string) {
-    // Stream content directly - write as-is to preserve natural flow
-    process.stdout.write(colors.text(content));
+    this.ensureNewline();
+    process.stdout.write(colors.white(content));
   }
 
   static streamComplete() {
-    // Add newline when streaming completes
+    // We do not set pending to false here because streamContent already handles newline naturally,
+    // but we do print a newline to end the stream cleanly.
     console.log();
   }
 
+  static usageStats(stats: UsageStats): void {
+    this.ensureNewline();
+    const parts: string[] = [];
+
+    if (stats.inputTokens !== null) {
+      parts.push(`↑ ${stats.inputTokens.toLocaleString()} in`);
+    }
+    if (stats.outputTokens !== null) {
+      parts.push(`↓ ${stats.outputTokens.toLocaleString()} out`);
+    }
+    if (stats.reasoningTokens) {
+      parts.push(`⟳ ${stats.reasoningTokens.toLocaleString()} thinking`);
+    }
+    if (stats.ttftMs !== null) {
+      parts.push(`TTFT ${stats.ttftMs}ms`);
+    }
+    parts.push(`${(stats.totalMs / 1000).toFixed(1)}s`);
+
+    console.log(colors.dimText("  " + parts.join("  ·  ")));
+  }
+
   static toolCallStart(toolName: string, args: Record<string, any>) {
-    // Minimal tool call display - just tool name and key info
-    const formattedTool = this.formatToolName(toolName);
+    this.ensureNewline();
+
+    const claudeName = this.formatToolName(toolName);
     let preview = "";
 
     switch (toolName) {
       case "read_file":
-        preview = args.path;
-        break;
       case "write_file":
-        preview = args.path;
+        preview = args.path
+          ? args.path.length > 50
+            ? args.path.substring(0, 47) + "..."
+            : args.path
+          : "";
         break;
       case "list_files":
         preview = args.path + (args.recursive === "true" ? " (recursive)" : "");
         break;
       case "run_command":
-        preview =
-          args.command.length > 50
-            ? args.command.substring(0, 47) + "..."
-            : args.command;
+        preview = args.command
+          ? args.command.length > 60
+            ? args.command.substring(0, 57) + "..."
+            : args.command
+          : "";
+        break;
+      case "fetch_url":
+        const urlObj = args.url
+          ? args.url.length > 60
+            ? args.url.substring(0, 57) + "..."
+            : args.url
+          : "";
+        const cssStr = args.extract_css ? ", extract_css=true" : "";
+        preview = urlObj + cssStr;
+        if (preview.length > 60) preview = preview.substring(0, 57) + "...";
+        break;
+      case "search_web":
+        preview = args.query ? '"' + args.query + '"' : "";
+        if (preview.length > 50) preview = preview.substring(0, 47) + "...";
         break;
     }
 
-    console.log(
-      colors.accent("* ") +
-        colors.keyword(formattedTool) +
-        (preview ? colors.textDim(` → ${preview}`) : ""),
+    process.stdout.write(
+      colors.veryDimText("⎿ ") +
+        colors.toolName(claudeName) +
+        colors.dimText("(" + preview + ")"),
     );
+    this._pendingToolLine = true;
   }
 
-  static toolCallResult(success: boolean, output?: string, error?: string) {
+  static toolCallResult(
+    success: boolean,
+    output: string,
+    error?: string,
+    toolName?: string,
+    args?: Record<string, any>,
+  ) {
+    if (!this._pendingToolLine) {
+      // If something else printed, append the tool name again or just print
+      process.stdout.write(
+        colors.veryDimText("⎿ ") + colors.dimText("result "),
+      );
+    }
+
     if (success) {
-      // Minimal success indicator
-      const summary = this.summarizeOutput(output);
-      if (summary) {
-        console.log(colors.success("  ✓ ") + colors.textDim(summary));
-      } else {
-        console.log(colors.success("  ✓"));
-      }
+      const summary = this.summarizeOutput(output, toolName, args);
+      process.stdout.write(colors.dimText(" · " + summary + "\n"));
     } else {
-      console.log(colors.error("  ✗ ") + colors.text(error || "Failed"));
+      let errStr = error || "Failed";
+      const firstLine = errStr.split("\n")[0];
+      process.stdout.write(
+        colors.dimText(" · ") + colors.errorRed("✗ " + firstLine) + "\n",
+      );
     }
+
+    this._pendingToolLine = false;
   }
 
-  private static summarizeOutput(output?: string): string {
-    if (!output || output.length === 0) return "";
+  private static summarizeOutput(
+    output: string,
+    toolName?: string,
+    args?: Record<string, any>,
+  ): string {
+    if (!output || output.length === 0) return "Success";
 
-    // For file listings, show just count
-    if (output.includes("📁") || output.includes("📄")) {
-      const lines = output.split("\n").filter((l) => l.trim());
-      const fileCount = lines.filter((l) => l.includes("📄")).length;
-      const dirCount = lines.filter((l) => l.includes("📁")).length;
-      if (fileCount > 0 || dirCount > 0) {
-        const parts = [];
-        if (fileCount > 0)
-          parts.push(`${fileCount} file${fileCount !== 1 ? "s" : ""}`);
-        if (dirCount > 0)
-          parts.push(`${dirCount} dir${dirCount !== 1 ? "s" : ""}`);
-        return parts.join(", ");
-      }
-    }
-
-    // For file content, show line count
-    if (output.includes("\n")) {
-      const lines = output.split("\n").length;
-      if (lines > 1) {
+    switch (toolName) {
+      case "read_file":
+        const lines = output.split("\n").length;
         return `${lines} lines`;
-      }
+      case "write_file":
+        const bytes =
+          args && args.content ? Buffer.byteLength(args.content, "utf8") : 0;
+        return `${bytes.toLocaleString()} bytes written`;
+      case "list_files":
+        const linesList = output.split("\n").filter((l) => l.trim());
+        const fileCount = linesList.filter((l) => l.includes("📄")).length;
+        const dirCount = linesList.filter((l) => l.includes("📁")).length;
+        return `${fileCount} files, ${dirCount} dirs`;
+      case "run_command":
+        return "✓ exit 0";
+      case "fetch_url":
+        const match = output.match(/Returned: (\d+) chars \| Format: ([a-z]+)/);
+        if (match) {
+          return `${match[1]} chars (${match[2]})`;
+        }
+        return `${output.length} chars`;
+      case "search_web":
+        const resCount = (output.match(/^\d+\./gm) || []).length;
+        if (resCount > 0) return `${resCount} results`;
+        return output.length < 50 ? output : "Search completed";
     }
 
-    // For short content, show character count
-    if (output.length < 200) {
-      return `${output.length} chars`;
-    }
-
-    // For long content, just show it's there
-    return "Content retrieved";
+    return "Success";
   }
 
   static confirmation(toolName: string, args: Record<string, any>): string {
-    const formattedTool = this.formatToolName(toolName);
-    const preview = this.getConfirmationPreview(toolName, args);
+    this.ensureNewline();
+    console.log();
+    const claudeName = this.formatToolName(toolName);
+    let preview = "";
+
+    switch (toolName) {
+      case "read_file":
+      case "write_file":
+      case "list_files":
+        preview = args.path || "";
+        break;
+      case "run_command":
+        preview = args.command
+          ? args.command.length > 40
+            ? args.command.substring(0, 37) + "..."
+            : args.command
+          : "";
+        break;
+      case "fetch_url":
+        preview = args.url || "";
+        break;
+      case "search_web":
+        preview = args.query ? '"' + args.query + '"' : "";
+        break;
+    }
+
     return (
-      colors.warning("  ▸ ") +
-      colors.keyword(formattedTool) +
-      (preview ? colors.textDim(` - ${preview}`) : "") +
-      colors.warning(" → Proceed?")
+      colors.dimText("  Allow ") +
+      colors.toolName(claudeName) +
+      colors.dimText("(" + preview + ")?")
     );
   }
 
-  private static getConfirmationPreview(
-    toolName: string,
-    args: Record<string, any>,
-  ): string {
-    switch (toolName) {
-      case "write_file":
-        return `${args.path}`;
-      case "run_command":
-        return args.command.length > 40
-          ? args.command.substring(0, 37) + "..."
-          : args.command;
-      case "read_file":
-        return `${args.path}`;
-      case "list_files":
-        return `${args.path}`;
-      default:
-        return "";
-    }
-  }
-
   static cancelled() {
-    console.log(colors.textDim("  ✗ Cancelled"));
+    this.ensureNewline();
+    console.log(colors.dimText("  Cancelled"));
   }
 
-  static complete() {
+  static complete(session?: SessionStats) {
+    this.ensureNewline();
     console.log();
-    console.log(colors.accent("* ") + colors.keyword("Complete"));
-    console.log(colors.success("  ✓ Task completed"));
+    console.log(colors.accent("> ") + colors.keyword("Done"));
+    console.log(colors.success("  ✓ ") + colors.dimText("Task completed"));
+
+    if (session && session.totalInputTokens > 0) {
+      const totalTokens = session.totalInputTokens + session.totalOutputTokens;
+      console.log(
+        colors.dimText(
+          `  Session: ${session.iterations} steps · ` +
+            `${session.totalInputTokens.toLocaleString()} in · ` +
+            `${session.totalOutputTokens.toLocaleString()} out · ` +
+            `${totalTokens.toLocaleString()} total · ` +
+            `${(session.totalMs / 1000).toFixed(1)}s`,
+        ),
+      );
+    }
     console.log();
   }
 
   static error(message: string) {
+    this.ensureNewline();
     console.log();
-    // Handle multi-line error messages
+    console.log(colors.accent("> ") + colors.errorRed("Error"));
     const lines = message.split("\n");
-    console.log(colors.error("  ✗ Error: ") + colors.text(lines[0]));
-    if (lines.length > 1) {
-      lines.slice(1).forEach((line) => {
-        console.log(colors.text(`    ${line}`));
-      });
+    for (const line of lines) {
+      console.log(colors.dimText("  " + line));
     }
     console.log();
   }
 
   static warning(message: string) {
-    // Suppress verbose warnings - only show critical ones
-    // This prevents clutter from "Agent mentioned using tools" messages
-    if (!message.includes("mentioned using tools")) {
-      console.log(colors.textDim(`  ${message}`));
-    }
-  }
-
-  static info(message: string) {
-    console.log(colors.textDim(`  ${message}`));
+    this.ensureNewline();
+    console.log(colors.dimText("  " + message));
   }
 
   static maxIterations() {
+    this.ensureNewline();
     console.log();
-    console.log(colors.warning("  ⚠ Maximum iterations reached"));
+    console.log(
+      colors.warningAmb("  ⚠ ") + colors.dimText("Max iterations reached"),
+    );
+    console.log();
+  }
+
+  static setupHeader() {
+    this.ensureNewline();
+    console.log();
+    console.log(colors.accent("> ") + colors.white("lowkeyarhan setup"));
+    console.log(colors.dimText("  Configure your AI provider and model."));
     console.log();
   }
 
   private static formatToolName(name: string): string {
-    return name
-      .split("_")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  }
-
-  static separator() {
-    console.log(colors.textVeryDim("  " + "─".repeat(60)));
-  }
-
-  static processing(message: string) {
-    console.log(
-      colors.accent("* ") + colors.keyword(message) + colors.textDim("..."),
-    );
-  }
-
-  static prompt(): string {
-    // Return the prompt string for readline (Claude Code style)
-    return colors.accent("> ") + colors.text("");
+    switch (name) {
+      case "read_file":
+        return "Read";
+      case "write_file":
+        return "Write";
+      case "list_files":
+        return "List";
+      case "run_command":
+        return "Bash";
+      case "fetch_url":
+        return "Fetch";
+      case "search_web":
+        return "Search";
+      default:
+        return name
+          .split("_")
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(" ");
+    }
   }
 }

@@ -49,3 +49,18 @@ export interface AgentConfig {
   maxIterations: number;
   conversationFile: string;
 }
+
+export interface UsageStats {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  reasoningTokens?: number | null;
+  ttftMs: number | null;
+  totalMs: number;
+}
+
+export interface SessionStats {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  iterations: number;
+  totalMs: number;
+}

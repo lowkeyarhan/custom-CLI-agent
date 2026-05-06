@@ -6,105 +6,91 @@ import { tools, executeTool } from "./tools.js";
 import { HistoryManager } from "./history.js";
 import { UI } from "./ui.js";
 
-const SYSTEM_PROMPT = `You are lowkeyarhan, an advanced autonomous AI coding agent with exceptional problem-solving and logical reasoning capabilities.
+const SYSTEM_PROMPT = `You are lowkeyarhan, an autonomous coding agent running in the terminal.
 
-## Your Capabilities
-You have access to these tools that you MUST use to complete tasks:
-- read_file: Read file contents to understand code structure and context
-- write_file: Create or modify files with precise, well-structured code
-- list_files: Explore directory structures to understand project layout
-- run_command: Execute shell commands to test, build, or verify changes
+## Tools Available
 
-## Problem-Solving Methodology
+- **read_file(path)** — Read a file's contents
+- **write_file(path, content)** — Create or overwrite a file
+- **list_files(path, recursive?, depth?)** — List directory contents
+- **run_command(command, cwd?)** — Execute a shell command
+- **fetch_url(url, format?, extract_css?)** — Fetch a webpage. Use format="html" 
+  when cloning sites (preserves structure). Use extract_css=true to get styles too.
+- **search_web(query, max_results?)** — Search DuckDuckGo, returns URLs + snippets
 
-### 1. ANALYZE FIRST (Think Before Acting)
-- Break down complex tasks into smaller, manageable steps
-- Identify what information you need before making changes
-- Consider edge cases and potential issues
-- Plan your approach logically before executing
+## Rules
 
-### 2. GATHER CONTEXT (Understand the Full Picture)
-- Read relevant files to understand the codebase structure
-- Check dependencies, imports, and relationships between files
-- Understand the existing patterns and conventions
-- Identify what needs to change and what should remain unchanged
-
-### 3. REASON LOGICALLY (Apply Systematic Thinking)
-- Use deductive reasoning: Start with what you know, derive what you need
-- Use inductive reasoning: Observe patterns, form hypotheses, test them
-- Consider cause and effect: Understand how changes will impact the system
-- Think step-by-step: Each action should logically follow from the previous
-
-### 4. EXECUTE PRECISELY (Take Action)
-- Make changes incrementally and verify each step
-- Use tools immediately when you need information - don't just describe what you would do
-- Test your changes when possible (run commands, check syntax)
-- Ensure code quality: proper formatting, error handling, comments where needed
-
-### 5. VERIFY & ITERATE (Ensure Correctness)
-- After making changes, verify they work as intended
-- Read back modified files to confirm changes are correct
-- If something doesn't work, analyze why and fix it
-- Continue until the task is fully complete and verified
-
-## Critical Rules
-
-1. **ACT, DON'T DESCRIBE**: When you need information, immediately CALL the tool. Never say "I will use X tool" - just use it.
-
-2. **REASON OUT LOUD**: Briefly explain your thinking process before taking action. This helps you stay focused and logical.
-
-3. **BE THOROUGH**: Don't stop at the first solution. Consider alternatives, edge cases, and improvements.
-
-4. **VERIFY YOUR WORK**: After making changes, always verify they're correct. Read files back, run tests, check outputs.
-
-5. **ITERATE SYSTEMATICALLY**: If the first approach doesn't work, analyze why, adjust your strategy, and try again.
-
-## Workflow Pattern
-
-For any task:
-1. **Understand**: What exactly needs to be done? What are the requirements?
-2. **Explore**: What files are involved? What's the current state?
-3. **Plan**: What steps will achieve the goal? What's the best approach?
-4. **Execute**: Make changes incrementally, verifying each step
-5. **Verify**: Confirm the solution works and meets all requirements
-6. **Complete**: Summarize what was accomplished
-
-## Example Thought Process
-
-Good approach:
-"To add error handling, I need to:
-1. Read the current file to see the structure
-2. Identify where errors might occur
-3. Add try-catch blocks or error checks
-4. Test the changes
-5. Verify the code still works"
-
-Bad approach:
-"I will add error handling by reading the file and then modifying it."
-
-Remember: You're a logical problem-solver. Think systematically, act precisely, verify thoroughly.`;
+1. When the user provides a URL, immediately call fetch_url on it before doing 
+   anything else.
+2. When cloning a website: fetch_url first with format="html", study the structure 
+   (sections, class names, colour scheme, fonts, layout), then build a faithful 
+   reproduction as a single self-contained .html file with embedded CSS and JS.
+3. Always verify your work: after writing a file, read it back or run a command 
+   to confirm it was written correctly.
+4. Never describe what you're going to do — just do it with tool calls.
+5. Complete tasks fully. Do not stop and ask for confirmation mid-task.
+6. For shell commands that build or test code, always check the exit code / output.`;
 
 export class Agent {
   private client: OpenAI;
   private config: AgentConfig;
   private history: HistoryManager;
   private spinner: Ora | null = null;
+  private provider: string;
+
+  private sessionInputTokens = 0;
+  private sessionOutputTokens = 0;
+  private sessionIterations = 0;
+  private sessionTotalMs = 0;
 
   constructor(config: AgentConfig) {
     this.config = config;
 
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
-      throw new Error("OPENROUTER_API_KEY environment variable is required");
+    this.provider = process.env.PROVIDER || "openrouter";
+
+    const providerConfigs: Record<string, { baseURL: string; apiKey: string }> =
+      {
+        openrouter: {
+          baseURL: "https://openrouter.ai/api/v1",
+          apiKey: process.env.OPENROUTER_API_KEY || "",
+        },
+        openai: {
+          baseURL: "https://api.openai.com/v1",
+          apiKey: process.env.OPENAI_API_KEY || "",
+        },
+        anthropic: {
+          baseURL: "https://api.anthropic.com/v1",
+          apiKey: process.env.ANTHROPIC_API_KEY || "",
+        },
+        google: {
+          baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+          apiKey: process.env.GOOGLE_API_KEY || "",
+        },
+        custom: {
+          baseURL: process.env.CUSTOM_BASE_URL || "http://localhost:11434/v1",
+          apiKey: process.env.CUSTOM_API_KEY || "ollama",
+        },
+      };
+
+    const providerConfig =
+      providerConfigs[this.provider] || providerConfigs.openrouter;
+
+    if (!providerConfig.apiKey) {
+      throw new Error(
+        `No API key found for provider "${this.provider}". Run 'lowkeyarhan --setup' to configure.`,
+      );
     }
 
     this.client = new OpenAI({
-      baseURL: "https://openrouter.ai/api/v1",
-      apiKey,
-      defaultHeaders: {
-        "HTTP-Referer": process.env.APP_URL || "http://localhost",
-        "X-Title": process.env.APP_NAME || "lowkeyarhan",
-      },
+      baseURL: providerConfig.baseURL,
+      apiKey: providerConfig.apiKey,
+      defaultHeaders:
+        this.provider === "openrouter"
+          ? {
+              "HTTP-Referer": process.env.APP_URL || "http://localhost",
+              "X-Title": process.env.APP_NAME || "lowkeyarhan",
+            }
+          : {},
     });
 
     this.history = new HistoryManager(config.conversationFile);
@@ -112,29 +98,28 @@ export class Agent {
 
   async initialize(): Promise<void> {
     await this.history.load();
-
-    // Add system prompt if this is a new conversation
     const messages = this.history.getMessages();
     if (messages.length === 0 || messages[0].role !== "system") {
-      this.history.addMessage({
-        role: "system",
-        content: SYSTEM_PROMPT,
-      });
+      this.history.addMessage({ role: "system", content: SYSTEM_PROMPT });
     }
   }
 
   async run(userMessage: string): Promise<void> {
-    // Add user message to history
-    this.history.addMessage({
-      role: "user",
-      content: userMessage,
-    });
+    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+    const foundUrls = userMessage.match(urlRegex);
+
+    if (foundUrls && foundUrls.length > 0) {
+      userMessage += `\n\n[URLs detected in message: ${foundUrls.join(", ")}. Use fetch_url to read these pages before responding.]`;
+    }
+
+    this.history.addMessage({ role: "user", content: userMessage });
 
     let iterations = 0;
     let shouldContinue = true;
 
     while (shouldContinue && iterations < this.config.maxIterations) {
       iterations++;
+      this.sessionIterations++;
 
       try {
         shouldContinue = await this.executeIteration();
@@ -143,226 +128,198 @@ export class Agent {
         shouldContinue = false;
       }
 
-      // Save after each iteration
       await this.history.save();
     }
 
     if (iterations >= this.config.maxIterations) {
       UI.maxIterations();
     }
+
+    UI.complete({
+      totalInputTokens: this.sessionInputTokens,
+      totalOutputTokens: this.sessionOutputTokens,
+      iterations: this.sessionIterations,
+      totalMs: this.sessionTotalMs,
+    });
   }
 
   private async executeIteration(): Promise<boolean> {
     const messages = this.history.getMessages();
+    const iterationStartTime = Date.now();
+    let firstTokenTime: number | null = null;
+    let currentMaxTokens = 4096;
+
+    let stream;
 
     try {
-      const stream = await this.client.chat.completions
-        .create({
+      try {
+        stream = await this.client.chat.completions.create({
           model: this.config.model,
           messages: messages as any,
           tools: tools.map((t) => ({ type: "function" as const, function: t })),
           stream: true,
           temperature: 0.7,
-          max_tokens: 4096,
-        })
-        .catch((error: any) => {
-          // Stop spinner if running
-          if (this.spinner?.isSpinning) {
-            this.spinner.stop();
-          }
-
-          // Extract detailed error information
-          let errorMessage = "Unknown error";
-          if (error?.response?.data?.error?.message) {
-            errorMessage = error.response.data.error.message;
-          } else if (error?.message) {
-            errorMessage = error.message;
-          } else if (typeof error === "string") {
-            errorMessage = error;
-          }
-
-          // Provide helpful context
-          if (
-            errorMessage.includes("404") ||
-            errorMessage.includes("No endpoints")
-          ) {
-            errorMessage = `Model "${this.config.model}" not found or unavailable. Try a different model.`;
-          } else if (
-            errorMessage.includes("401") ||
-            errorMessage.includes("Unauthorized")
-          ) {
-            errorMessage =
-              "Invalid API key. Please check your OPENROUTER_API_KEY.";
-          } else if (
-            errorMessage.includes("429") ||
-            errorMessage.includes("rate limit")
-          ) {
-            errorMessage =
-              "Rate limit exceeded. Please wait a moment and try again.";
-          } else if (errorMessage.includes("Provider returned error")) {
-            errorMessage = `API error: The model provider returned an error. This might be due to:\n    - Model temporarily unavailable\n    - Invalid request format\n    - Try using a different model with -m flag`;
-          }
-
-          throw new Error(errorMessage);
+          max_tokens: currentMaxTokens,
+          stream_options: { include_usage: true },
+          parallel_tool_calls: false,
         });
-
-      let assistantMessage = "";
-      let toolCalls: ToolCall[] = [];
-      let hasStartedContent = false;
-      let hasShownThinking = false;
-
-      // Start spinner for thinking indicator
-      this.spinner = ora({
-        text: "Thinking",
-        spinner: "dots",
-        color: "cyan",
-      }).start();
-
-      try {
-        for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta;
-
-          if (delta?.content) {
-            // Stop spinner and show content when streaming starts
-            if (!hasShownThinking && delta.content.trim()) {
-              this.spinner?.stop();
-              hasShownThinking = true;
-            }
-
-            // Add indentation only at the very start of content
-            if (!hasStartedContent && delta.content.trim()) {
-              process.stdout.write("  ");
-              hasStartedContent = true;
-            }
-            UI.streamContent(delta.content);
-            assistantMessage += delta.content;
-
-            // If content ends with newline, add indentation for next line
-            if (delta.content.endsWith("\n")) {
-              process.stdout.write("  ");
-            }
-          }
-
-          if (delta?.tool_calls) {
-            for (const toolCallDelta of delta.tool_calls) {
-              if (toolCallDelta.index !== undefined) {
-                if (!toolCalls[toolCallDelta.index]) {
-                  toolCalls[toolCallDelta.index] = {
-                    id: toolCallDelta.id || "",
-                    type: "function",
-                    function: {
-                      name: "",
-                      arguments: "",
-                    },
-                  };
-                }
-
-                const tc = toolCalls[toolCallDelta.index];
-
-                if (toolCallDelta.id) tc.id = toolCallDelta.id;
-                if (toolCallDelta.function?.name) {
-                  tc.function.name = toolCallDelta.function.name;
-                }
-                if (toolCallDelta.function?.arguments) {
-                  tc.function.arguments += toolCallDelta.function.arguments;
-                }
-              }
-            }
-          }
-        }
-      } catch (streamError: any) {
-        // Stop spinner if running
-        if (this.spinner?.isSpinning) {
-          this.spinner.stop();
-        }
-
-        // Re-throw with better error message
-        let errorMessage = streamError?.message || String(streamError);
+      } catch (err: any) {
+        const errStr = String(err);
         if (
-          errorMessage.includes("Provider returned error") ||
-          errorMessage.includes("provider")
+          errStr.includes("400") &&
+          (errStr.toLowerCase().includes("max_tokens") ||
+            errStr.toLowerCase().includes("context length"))
         ) {
-          errorMessage = `API error: The model provider returned an error.\n    This might be due to:\n    - Model "${this.config.model}" temporarily unavailable\n    - Invalid request format\n    - Try using a different model: lowkeyarhan -m "google/gemini-2.0-flash-exp:free" "your task"`;
+          stream = await this.client.chat.completions.create({
+            model: this.config.model,
+            messages: messages as any,
+            tools: tools.map((t) => ({
+              type: "function" as const,
+              function: t,
+            })),
+            stream: true,
+            temperature: 0.7,
+            max_tokens: 2048,
+            stream_options: { include_usage: true },
+            parallel_tool_calls: false,
+          });
+        } else {
+          throw err;
         }
-        throw new Error(errorMessage);
       }
-
-      // Stop spinner if it's still running
-      if (this.spinner?.isSpinning) {
-        this.spinner.stop();
-      }
-
-      if (assistantMessage) {
-        UI.streamComplete(); // New line after streaming completes
-      }
-
-      // Save assistant message
-      const message: Message = {
-        role: "assistant",
-        content: assistantMessage || "",
-      };
-
-      if (toolCalls.length > 0) {
-        message.tool_calls = toolCalls;
-      }
-
-      this.history.addMessage(message);
-
-      // Execute tool calls if any
-      if (toolCalls.length > 0) {
-        for (const toolCall of toolCalls) {
-          await this.executeToolCall(toolCall);
-        }
-        return true; // Continue loop
-      }
-
-      // Check if the agent is describing tool usage without actually calling them
-      const lowerContent = assistantMessage.toLowerCase();
-      const mentionsTools =
-        lowerContent.includes("list_files") ||
-        lowerContent.includes("read_file") ||
-        lowerContent.includes("write_file") ||
-        lowerContent.includes("run_command") ||
-        lowerContent.includes("will use") ||
-        lowerContent.includes("i would like to") ||
-        lowerContent.includes("my first step");
-
-      if (mentionsTools && toolCalls.length === 0) {
-        // Silently prompt the agent to actually use the tools (no visible warning)
-        this.history.addMessage({
-          role: "user",
-          content:
-            "Please proceed and actually call the tool now. Do not just describe what you will do - execute the tool call.",
-        });
-        return true; // Continue loop
-      }
-
-      // No tool calls and not talking about tools, conversation is complete
-      return false;
     } catch (error: any) {
-      // Stop spinner if it's still running
-      if (this.spinner?.isSpinning) {
-        this.spinner.stop();
-      }
+      if (this.spinner?.isSpinning) this.spinner.stop();
+      let errorMessage =
+        error?.response?.data?.error?.message ||
+        error?.message ||
+        String(error);
+      throw new Error(`API error: ${errorMessage}`);
+    }
 
-      // Re-throw with better error message if not already processed
-      if (
-        error?.message &&
-        !error.message.includes("Model") &&
-        !error.message.includes("API key")
-      ) {
-        // Check for common error patterns
-        let errorMessage = error.message;
+    let assistantMessage = "";
+    let toolCalls: ToolCall[] = [];
 
-        if (errorMessage.includes("Provider returned error")) {
-          errorMessage = `API error: The model provider returned an error.\n    This might be due to:\n    - Model "${this.config.model}" temporarily unavailable\n    - Invalid request format\n    - Try using a different model: lowkeyarhan -m "google/gemini-2.0-flash-exp:free" "your task"`;
+    let hasShownThinking = false;
+    let usageData: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+      reasoning_tokens?: number;
+    } | null = null;
+
+    this.spinner = ora({
+      text: "Thinking",
+      color: "green",
+      spinner: "dots",
+    }).start();
+
+    try {
+      for await (const chunk of stream) {
+        if (chunk.usage && chunk.usage.total_tokens) {
+          usageData = chunk.usage;
         }
 
-        throw new Error(errorMessage);
-      }
+        const delta = chunk.choices[0]?.delta;
 
-      throw error;
+        if (delta?.content) {
+          if (!firstTokenTime && delta.content.trim()) {
+            firstTokenTime = Date.now();
+          }
+
+          if (!hasShownThinking && delta.content.trim()) {
+            this.spinner?.stop();
+            this.spinner?.clear();
+            hasShownThinking = true;
+          }
+
+          UI.streamContent(delta.content);
+          assistantMessage += delta.content;
+        }
+
+        if (delta?.tool_calls) {
+          if (!hasShownThinking) {
+            this.spinner?.stop();
+            this.spinner?.clear();
+            hasShownThinking = true;
+          }
+          if (!firstTokenTime) {
+            firstTokenTime = Date.now();
+          }
+
+          for (const toolCallDelta of delta.tool_calls) {
+            if (toolCallDelta.index !== undefined) {
+              if (!toolCalls[toolCallDelta.index]) {
+                toolCalls[toolCallDelta.index] = {
+                  id: toolCallDelta.id || "",
+                  type: "function",
+                  function: { name: "", arguments: "" },
+                };
+              }
+              const tc = toolCalls[toolCallDelta.index];
+              if (toolCallDelta.id) tc.id = toolCallDelta.id;
+              if (toolCallDelta.function?.name)
+                tc.function.name = toolCallDelta.function.name;
+              if (toolCallDelta.function?.arguments)
+                tc.function.arguments += toolCallDelta.function.arguments;
+            }
+          }
+        }
+      }
+    } catch (streamError: any) {
+      if (this.spinner?.isSpinning) {
+        this.spinner.stop();
+        this.spinner.clear();
+      }
+      throw new Error(`Stream Error: ${streamError.message}`);
     }
+
+    if (this.spinner?.isSpinning) {
+      this.spinner.stop();
+      this.spinner.clear();
+    }
+
+    if (assistantMessage) {
+      UI.streamComplete();
+    }
+
+    const iterationEndTime = Date.now();
+    const totalTime = iterationEndTime - iterationStartTime;
+    const ttft = firstTokenTime ? firstTokenTime - iterationStartTime : null;
+
+    this.sessionTotalMs += totalTime;
+
+    if (usageData) {
+      if (usageData.prompt_tokens)
+        this.sessionInputTokens += usageData.prompt_tokens;
+      if (usageData.completion_tokens)
+        this.sessionOutputTokens += usageData.completion_tokens;
+    }
+
+    if (usageData || ttft !== null) {
+      UI.usageStats({
+        inputTokens: usageData?.prompt_tokens ?? null,
+        outputTokens: usageData?.completion_tokens ?? null,
+        reasoningTokens: usageData?.reasoning_tokens ?? null,
+        ttftMs: ttft,
+        totalMs: totalTime,
+      });
+    }
+
+    const message: Message = {
+      role: "assistant",
+      content: assistantMessage || "",
+    };
+    if (toolCalls.length > 0) message.tool_calls = toolCalls;
+    this.history.addMessage(message);
+
+    if (toolCalls.length > 0) {
+      for (const toolCall of toolCalls) {
+        await this.executeToolCall(toolCall);
+      }
+      return true; // Continue after tools
+    }
+
+    return false; // End
   }
 
   private async executeToolCall(toolCall: ToolCall): Promise<void> {
@@ -372,17 +329,29 @@ export class Agent {
     try {
       args = JSON.parse(argsStr);
     } catch (error) {
-      UI.error(`Failed to parse tool arguments: ${argsStr}`);
+      UI.toolCallStart(name, {});
+      UI.toolCallResult(
+        false,
+        "",
+        `Failed to parse tool arguments: ${argsStr}`,
+        name,
+        {},
+      );
+      this.history.addMessage({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: `Failed to parse arguments: ${argsStr}`,
+      });
       return;
     }
 
-    // Show tool call
+    // Log the start on the same line
     UI.toolCallStart(name, args);
 
-    // Check if we need user confirmation
-    const needsConfirmation = await this.needsConfirmation(name, args);
-
-    if (needsConfirmation && !this.config.autoApprove) {
+    const needsConf = await this.needsConfirmation(name, args);
+    if (needsConf && !this.config.autoApprove) {
+      // Must newline before Inquirer if we are half-line
+      // UI.confirmation does this.
       const { confirm } = await inquirer.prompt([
         {
           type: "confirm",
@@ -397,29 +366,19 @@ export class Agent {
         this.history.addMessage({
           role: "tool",
           tool_call_id: toolCall.id,
-          content: "Tool execution was cancelled by the user",
+          content: "Cancelled",
         });
         return;
       }
+
+      // Reprint tool call start because Inquirer broke the line
+      UI.toolCallStart(name, args);
     }
 
-    // Show loading indicator while executing tool
-    this.spinner = ora({
-      text: `Executing ${this.formatToolName(name)}`,
-      spinner: "dots",
-      color: "cyan",
-    }).start();
-
-    // Execute tool
     const result = await executeTool(name, args);
 
-    // Stop spinner
-    this.spinner.stop();
+    UI.toolCallResult(result.success, result.output, result.error, name, args);
 
-    // Show result
-    UI.toolCallResult(result.success, result.output, result.error);
-
-    // Add tool result to history
     this.history.addMessage({
       role: "tool",
       tool_call_id: toolCall.id,
@@ -429,35 +388,12 @@ export class Agent {
     });
   }
 
-  private formatToolName(name: string): string {
-    return name
-      .split("_")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  }
-
   private async needsConfirmation(
     toolName: string,
-    args: Record<string, any>,
+    _args: Record<string, any>,
   ): Promise<boolean> {
-    // Always confirm writes and commands
-    if (toolName === "write_file" || toolName === "run_command") {
-      return true;
-    }
-
-    // Extra confirmation for dangerous operations
-    if (toolName === "run_command") {
-      const cmd = args.command?.toLowerCase() || "";
-      if (
-        cmd.includes("rm ") ||
-        cmd.includes("delete") ||
-        cmd.includes("remove")
-      ) {
-        return true;
-      }
-    }
-
-    // Reads and lists don't need confirmation
+    if (toolName === "write_file" || toolName === "run_command") return true;
+    if (toolName === "fetch_url" || toolName === "search_web") return false; // read-only
     return false;
   }
 
